@@ -1,0 +1,24 @@
+{
+  "name": "zeus",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "scripts": {
+    "build": "bun run src/build.ts",
+    "build:check": "bun run src/build.ts --check",
+    "build:binary": "bun run build && bun run src/build-release.ts --host",
+    "release:build": "bun run build && bun run src/build-release.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run typecheck && bun run build:check && bun run test && bash -n install.sh",
+    "zeus:install": "bun run build:binary && ./release/zeus install",
+    "zeus:uninstall": "${ZEUS_BIN_DIR:-$HOME/.local/bin}/zeus uninstall"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "jsonc-parser": "3.3.1"
+  }
+}

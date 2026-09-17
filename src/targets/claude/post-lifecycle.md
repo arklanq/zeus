@@ -1,0 +1,1 @@
+Wynik wykonawcy wraca do sesji Zeusa jako notatka po zakończeniu jego tury; nie odpytuj sesji w pętli. Po sam sygnał zakończenia użyj `SendMessage` z `notify_when_idle: true` bez treści. Gdy użytkownik prosi o postęp lub wykonawca milczy zbyt długo, sprawdź sesję przez `get_session` i `list_events` i przedstaw zwięzły stan, nie transkrypt; `stop_session` zatrzymuje jego turę.

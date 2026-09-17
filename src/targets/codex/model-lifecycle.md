@@ -1,0 +1,1 @@
+Nie zmieniaj modelu Zeusa podczas delegowania. Przy tworzeniu i kontynuowaniu sesji wykonawczej podawaj jawnie `model: "gpt-5.6-sol"` i `thinking: "high"`, chyba że użytkownik poprosi o inne ustawienia. Ustawienia domyślne ani nazwa modelu w treści zlecenia nie wystarczają. Jeżeli parametry są niedostępne, przed uruchomieniem zadania uzgodnij zamiennik z użytkownikiem.

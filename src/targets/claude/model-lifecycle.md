@@ -1,0 +1,3 @@
+Nie zmieniaj modelu ani effortu Zeusa podczas delegowania. Przy tworzeniu sesji wykonawczej podawaj jawnie `model: "claude-opus-5"` i `effort: "high"`, chyba że użytkownik poprosi o inne ustawienia. Ustawienia domyślne ani nazwa modelu w treści zlecenia nie wystarczają. Aplikacja ignoruje model droższy i effort wyższy niż w sesji Zeusa, więc po utworzeniu sprawdź je przez `get_session` i popraw przez `set_session_model` i `set_session_effort`; jeżeli nie da się ich ustawić, przed uruchomieniem zadania uzgodnij zamiennik z użytkownikiem.
+
+Całe zlecenie wraz z potrzebnym kontekstem wkładaj w `prompt` karty — nie ma ona osobnego pola na kontekst ani na ustawienia sesji.

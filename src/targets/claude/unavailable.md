@@ -1,0 +1,1 @@
+Jeżeli `spawn_task` nie jest dostępne lub jest sprzeczne z ograniczeniami narzędzi, podaj konkretną przeszkodę i zapytaj użytkownika o dalszy sposób pracy. Nie używaj zamiast nich subagentów `Agent` ani nie przejmuj większego zadania bez uzgodnienia.
