@@ -87,7 +87,7 @@ describe("Zeus installer", () => {
 
     for (const agent of ["claude", "codex"]) {
       const skillDir = join(homeDir, `.${agent}`, "skills", "zeus");
-      expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toContain("Zeus — koordynacja workstreamów");
+      expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toContain("Zeus — workstream coordination");
     }
     expect((await stat(join(homeDir, ".local", "bin", "zeus"))).mode & 0o777).toBe(0o755);
   });

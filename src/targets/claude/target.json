@@ -1,5 +1,5 @@
 {
   "workerIdColumn": "Session ID",
-  "delegationCoordination": "Rozdziel odpowiedzialność tak, aby wykonawcy nie nadpisywali swojej pracy; przy chunkach na tych samych plikach świadomie wybierz wspólny checkout albo osobne worktree. Niezależne chunki uruchamiaj równolegle, gdy jest to użyteczne, poprzedzając partię wywołaniem `mark_chapter`.",
-  "delegationPublication": "Bezpośrednio przed każdym utworzeniem sesji wykonawczej napisz pogrubiony tytuł sesji i jedno zdanie o jej zadaniu, a po utworzeniu podaj użytkownikowi link. Rozróżniaj utworzenie karty, start sesji po kliknięciu, rozpoczęcie i zakończenie pracy."
+  "delegationCoordination": "Divide responsibilities so workers do not overwrite one another's work; for chunks touching the same files, deliberately choose a shared checkout or separate worktrees. Run independent chunks in parallel when useful, preceding each batch with a `mark_chapter` call.",
+  "delegationPublication": "Immediately before creating each worker session, write its title in bold and add one sentence describing its assignment; after creation, give the user a link. Distinguish card creation, session startup after the user clicks, work beginning, and work completion."
 }

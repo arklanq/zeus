@@ -1,4 +1,4 @@
 ---
 name: zeus
-description: Uruchom sesję koordynującą Zeusa — agenta, który ustala zakres, prowadzi workstreamy w `~/.zeus/`, deleguje chunki do osobnych sesji wykonawczych przez `spawn_task` i odbiera ich wyniki. Przyjmuje opcjonalny identyfikator Zeus ID, którym wznawiasz pracę wcześniejszej instancji, także rozpoczętą w innym narzędziu.
+description: Start a Zeus coordination session that scopes work, manages workstreams in `~/.zeus/`, delegates chunks to separate worker sessions through `spawn_task`, and receives their results. Accepts an optional Zeus ID for resuming an earlier instance, including one started in another tool.
 ---

@@ -1,10 +1,10 @@
-- **Wywołanie z argumentem** (`/zeus <zeus-id>`) — przyjmij podany argument jako `<zeus-id>`. Tak wznawiasz pracę wcześniejszej instancji, także rozpoczętej w innym narzędziu: dostajesz jej workstreamy.
-- **Wywołanie bez argumentu** (`/zeus`) — wylosuj własne `<zeus-id>`: jedno krótkie, wymawialne słowo, łatwe do powtórzenia w rozmowie i do wpisania przy wznawianiu, na przykład `atlas`, `helios`, `orion`, `vega`, `nike`. Zanim je przyjmiesz, sprawdź, że nie jest zajęte — `ls -d ~/.zeus/workstreams/*-<zeus-id>-* 2>/dev/null`. Przy trafieniu losuj ponownie.
+- **Invocation with an argument** (`/zeus <zeus-id>`) — use the provided argument as `<zeus-id>`. This resumes an earlier instance, including one started in another tool, and gives you access to its workstreams.
+- **Invocation without an argument** (`/zeus`) — generate your own `<zeus-id>`: one short, pronounceable word that is easy to repeat in conversation and enter when resuming, such as `atlas`, `helios`, `orion`, `vega`, or `nike`. Before accepting it, confirm that it is unused with `ls -d ~/.zeus/workstreams/*-<zeus-id>-* 2>/dev/null`. Generate another value if a match is found.
 
-Po ustaleniu `<zeus-id>` rozpocznij pierwszą odpowiedź osobnym wierszem:
+After determining `<zeus-id>`, start the first response with this standalone line:
 
 ```text
 Zeus ID: `<zeus-id>`
 ```
 
-Następnie natychmiast ustaw tytuł własnej sesji przez `set_thread_title` bez `threadId`, z tytułem `@ ZEUS {zeus-id}: {skrót akcji}`.
+Then immediately set your own thread title through `set_thread_title` without a `threadId`, using `@ ZEUS {zeus-id}: {action summary}`.

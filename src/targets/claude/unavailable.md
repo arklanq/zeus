@@ -1,1 +1,1 @@
-Jeżeli `spawn_task` nie jest dostępne lub jest sprzeczne z ograniczeniami narzędzi, podaj konkretną przeszkodę i zapytaj użytkownika o dalszy sposób pracy. Nie używaj zamiast nich subagentów `Agent` ani nie przejmuj większego zadania bez uzgodnienia.
+If `spawn_task` is unavailable or conflicts with tool constraints, state the specific obstacle and ask the user how to proceed. Do not substitute `Agent` subagents or take over a larger assignment without agreement.

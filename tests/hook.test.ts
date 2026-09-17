@@ -6,15 +6,15 @@ const skill = `---
 name: zeus
 ---
 
-# Zeus — koordynacja workstreamów
+# Zeus — workstream coordination
 
-## Uruchomienie
+## Startup
 
-Użyj identyfikatora {zeus-id} oraz <zeus-id>.
+Use the {zeus-id} and <zeus-id> identifiers.
 
-## Dalsza praca
+## Continued work
 
-Kontynuuj jako {zeus-id}.
+Continue as {zeus-id} and keep <zeus-id>.
 `;
 
 function claudeMessage(role: "assistant" | "user", text: string): string {
@@ -56,15 +56,22 @@ describe("Zeus hook", () => {
 
     expect(output?.hookSpecificOutput.hookEventName).toBe("PostCompact");
     expect(output?.hookSpecificOutput.additionalContext).toContain(
-      "Tożsamość tej instancji jest już ustalona: `atlas`",
+      "This instance's identity is already established as `atlas`",
     );
     expect(output?.hookSpecificOutput.additionalContext).toContain(
-      "## Tożsamość instancji",
+      "## Instance identity",
     );
     expect(output?.hookSpecificOutput.additionalContext).not.toContain(
-      "## Uruchomienie",
+      "## Startup",
     );
     expect(output?.hookSpecificOutput.additionalContext).not.toContain("{zeus-id}");
+    expect(output?.hookSpecificOutput.additionalContext).not.toContain("<zeus-id>");
+    expect(output?.hookSpecificOutput.additionalContext).toContain(
+      "## Continued work",
+    );
+    expect(output?.hookSpecificOutput.additionalContext).toContain(
+      "Continue as atlas and keep atlas.",
+    );
   });
 
   test("uses the Codex SessionStart output event", () => {

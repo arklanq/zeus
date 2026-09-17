@@ -7,7 +7,7 @@ Zeus coordinates parallel workstreams across Claude Code and Codex.
 On macOS or Linux, install Zeus with one command:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/master/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
 ```
 
 The shell installer detects the operating system and CPU architecture, downloads the matching standalone executable from GitHub Releases, verifies its SHA-256 checksum, and runs it.
@@ -17,9 +17,9 @@ The executable is installed to `~/.local/bin/zeus`. It installs the appropriate 
 Pin a release or limit the installation when needed:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/master/install.sh | bash -s -- --version v1.0.0
-curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/master/install.sh | bash -s -- --skip-codex
-curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/master/install.sh | bash -s -- --dry-run
+curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash -s -- --skip-codex
+curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash -s -- --dry-run
 ```
 
 Remove only files and configuration entries owned by Zeus:

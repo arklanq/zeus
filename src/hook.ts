@@ -94,7 +94,7 @@ function concretizeSkill(skill: string, zeusId: string): string {
     .replaceAll("{zeus-id}", zeusId)
     .replaceAll("<zeus-id>", zeusId);
   const lines = replaced.split(/\r?\n/);
-  const sectionStart = lines.findIndex((line) => line === "## Uruchomienie");
+  const sectionStart = lines.findIndex((line) => line === "## Startup");
   if (sectionStart < 0) {
     return replaced;
   }
@@ -107,9 +107,9 @@ function concretizeSkill(skill: string, zeusId: string): string {
   lines.splice(
     sectionStart,
     sectionEnd - sectionStart,
-    "## Tożsamość instancji",
+    "## Instance identity",
     "",
-    `Ta sesja jest już uruchomiona, a jej identyfikator to \`${zeusId}\`. Nie losuj nowego, nie pytaj o niego i nie traktuj braku argumentu jako nowego startu — pracujesz dalej pod tym samym identyfikatorem. Twoje workstreamy to te pasujące do \`~/.zeus/workstreams/*-${zeusId}-*\`.`,
+    `This session is already running and its identifier is \`${zeusId}\`. Do not generate a new one, ask for one, or treat the missing argument as a fresh start—you are continuing under the same identifier. Your workstreams are those matching \`~/.zeus/workstreams/*-${zeusId}-*\`.`,
     "",
   );
   return lines.join("\n");
@@ -126,12 +126,12 @@ export function createHookOutput(
   }
 
   const skillText = concretizeSkill(skill, zeusId);
-  const identity = `Tożsamość tej instancji jest już ustalona: \`${zeusId}\` (odzyskane z zaufanego znacznika pierwszej odpowiedzi Zeusa). W treści poniżej placeholdery zostały zastąpione tą wartością, a sekcja o uruchamianiu — usunięta, bo nie dotyczy sesji, która już działa.`;
+  const identity = `This instance's identity is already established as \`${zeusId}\` (restored from the trusted marker in Zeus's first response). The placeholders below have been replaced with that value, and the startup section has been removed because it does not apply to a session that is already running.`;
 
   return {
     hookSpecificOutput: {
       hookEventName: agent === "claude" ? "PostCompact" : "SessionStart",
-      additionalContext: `Kontekst tej sesji został właśnie skompaktowany. Prowadzisz ją jako Zeus.\n\n${identity}\n\nPoniżej pełna, obowiązująca treść instrukcji skilla /zeus — stosuj ją dalej w całości, także jeżeli skrót kontekstu jej nie zawiera.\n\n${skillText}`,
+      additionalContext: `This session's context has just been compacted. You are running it as Zeus.\n\n${identity}\n\nThe full authoritative instructions for the /zeus skill follow. Continue applying them in full even if the compacted context does not include them.\n\n${skillText}`,
     },
   };
 }

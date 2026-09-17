@@ -1,24 +1,24 @@
-## Tworzenie sesji wykonawczej
+## Creating a worker session
 
-Sesje wykonawcze twórz przez `spawn_task`. Karta powstaje od razu, ale sesja startuje dopiero po kliknięciu użytkownika, więc na początku workstreamu uprzedź go, ilu kliknięć będzie wymagać planowana liczba chunków.
+Create worker sessions through `spawn_task`. The card appears immediately, but the session starts only after the user clicks it, so at the beginning of a workstream tell the user how many clicks the planned chunks will require.
 
-1. Przed utworzeniem karty ustal własne `session_id` przez `get_session` z `"self"`. Bez niego wykonawca nie ma jak się zgłosić.
-2. Kartę twórz z tytułem `└─ {Imię}: {skrót akcji}` i samodzielnym promptem, bo karta nie przenosi rozmowy Zeusa. Sesja dostaje własny worktree.
-3. W prompcie karty zobowiąż wykonawcę, aby pierwszą czynnością po starcie zgłosił się do Zeusa przez `send_message` na jego `session_id`, podając własne `session_id`. Karta nie zwraca Zeusowi identyfikatora sesji, a powiadomienie o jej starcie nie wybudza bezczynnej sesji Zeusa — dociera dopiero przy najbliższym wybudzeniu. Handshake jest więc jedynym sygnałem, po którym Zeus dowiaduje się, że karta ruszyła, i jedynym pewnym źródłem `session_id`.
-4. Karta przyjmuje wyłącznie `title`, `tldr`, `prompt` i opcjonalne `cwd`; nie da się przez nią ustawić modelu, effortu ani kontekstu. Po odebraniu handshake zapisz `session_id` w rejestrze workstreamu, ustaw model i effort, i dopiero wtedy prowadź sesję jak zwykłą sesję wykonawczą.
-5. Odpowiedz na handshake przez `send_message`. Ta odpowiedź jest zarazem wiadomością rozruchową wymaganą z powodu opisanego niżej.
+1. Before creating the card, obtain your own `session_id` through `get_session` with `"self"`. Without it, the worker cannot report back.
+2. Create the card with the title `└─ {Name}: {action summary}` and a self-contained prompt because the card does not inherit Zeus's conversation. The session receives its own worktree.
+3. In the card prompt, require the worker's first action after startup to be reporting to Zeus through `send_message` at Zeus's `session_id`, including the worker's own `session_id`. The card does not return the worker session ID to Zeus, and the startup notification does not wake an idle Zeus session; it arrives only when Zeus next wakes. This handshake is therefore both the only signal that the card has started and the only reliable source of its `session_id`.
+4. A card accepts only `title`, `tldr`, `prompt`, and optional `cwd`; it cannot set the model, effort, or context. After receiving the handshake, record the `session_id` in the workstream registry, set the model and effort, and only then manage the session as a normal worker session.
+5. Reply to the handshake through `send_message`. This reply is also the bootstrap message required for the reason described below.
 
-### Serwery MCP w sesji wykonawczej
+### MCP servers in a worker session
 
-Sesja uruchomiona z karty nie ma na starcie kompletu serwerów MCP, a rozróżnienie jest ostre:
+A session started from a card does not initially have the full set of MCP servers, and the distinction is strict:
 
-- **Serwery konfigurowane lokalnie** — lokalne stdio i wpisy `claude mcp`, na przykład `context7`, `codegraph`, `webstorm`, `linear-server` — są dostępne od pierwszej tury.
-- **Konektory claude.ai** — serwery nazwane UUID-ami, na przykład Linear, Gmail, Drive, Calendar, Slack — pojawiają się dopiero w turze następnej po pierwszej wiadomości przysłanej do sesji. Nie ma ich ani w turze autonomicznej, ani w turze, którą ta wiadomość wyzwala.
+- **Locally configured servers** — local stdio servers and `claude mcp` entries such as `context7`, `codegraph`, `webstorm`, and `linear-server` — are available from the first turn.
+- **claude.ai connectors** — UUID-named servers such as Linear, Gmail, Drive, Calendar, and Slack — appear only on the turn after the first message sent to the session. They are unavailable both during the autonomous turn and during the turn triggered by that message.
 
-Stąd trzy reguły:
+This produces three rules:
 
-1. Pierwsza tura wykonawcy nie może zależeć od konektora claude.ai. Zaplanuj ją na pracę, która działa bez nich: orientacja w repozytorium, czytanie kodu, przygotowanie planu.
-2. Odpowiedź Zeusa na handshake jest tą pierwszą wiadomością. Od kolejnej tury wykonawcy konektory są dostępne.
-3. W prompcie karty zobowiąż wykonawcę, aby przed sięgnięciem po narzędzie konektora sprawdził jego obecność przez `ToolSearch` z dokładną nazwą. Przy braku nie improwizuje — nie szuka obejścia przez publiczne API i nie uznaje usługi za niedostępną — tylko kończy turę i zgłasza to Zeusowi. Kolejna tura będzie je miała.
+1. The worker's first turn must not depend on a claude.ai connector. Plan work that functions without them, such as repository orientation, code reading, or plan preparation.
+2. Zeus's handshake reply is that first message. Connectors are available beginning with the worker's following turn.
+3. Require the worker to check for the connector through `ToolSearch` using its exact name before reaching for its tool. If it is absent, the worker must not improvise, look for a public-API workaround, or declare the service unavailable. It should end the turn and report the absence to Zeus; the connector will be available on the next turn.
 
-Do rozstrzygnięcia, czy konektora nie ma, czy usługa padła, służy `session_connectors_status`, dostępne w sesji z karty od pierwszej tury. Serwera w stanie `needs_auth` nie podłączy ani Zeus, ani wykonawca — logowanie wykonuje wyłącznie użytkownik, więc zgłoś mu to i nie planuj chunku zależnego od takiego serwera. Reguły opierają się na pojedynczym pomiarze; jeżeli obserwacja się z nimi rozejdzie, zgłoś to użytkownikowi zamiast dobierać obejścia.
+Use `session_connectors_status`, which is available in a card session from the first turn, to distinguish a missing connector from a service outage. Neither Zeus nor the worker can connect a server in the `needs_auth` state; only the user can sign in, so report this and do not plan a chunk that depends on that server. These rules are based on one measurement; if observed behavior differs, report it to the user instead of inventing a workaround.

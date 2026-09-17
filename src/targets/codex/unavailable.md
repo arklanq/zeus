@@ -1,1 +1,1 @@
-Jeżeli `create_thread` jest niedostępne lub sprzeczne z ograniczeniami narzędzi, podaj konkretną przeszkodę i zapytaj użytkownika o dalszy sposób pracy. Nie używaj zamiast niego wewnętrznych subagentów ani nie przejmuj większego zadania bez uzgodnienia.
+If `create_thread` is unavailable or conflicts with tool constraints, state the specific obstacle and ask the user how to proceed. Do not substitute internal subagents or take over a larger assignment without agreement.
