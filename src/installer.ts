@@ -10,6 +10,7 @@ import {
   type Node,
   type ParseError,
 } from "jsonc-parser";
+import { createHash } from "node:crypto";
 import {
   chmod,
   lstat,
@@ -35,11 +36,19 @@ type CodexFeatureState = {
   previousValue: boolean | null;
 };
 
+type CodexHookTrustState = {
+  key: string;
+  trustedHash: string;
+  stateTableExisted: boolean;
+  previousTrustedHash: string | null;
+};
+
 type InstallManifest = {
-  version: 1;
+  version: 1 | 2;
   agent: AgentName;
   hooksFileExisted: boolean;
   codexFeature?: CodexFeatureState;
+  codexHookTrust?: CodexHookTrustState;
 };
 
 type WriteOperation = {
@@ -83,6 +92,21 @@ type AgentPaths = {
   hookEvent: "PostCompact" | "SessionStart";
   hookMatcher: string;
   codexConfigPath?: string;
+  canonicalizeCodexHome?: boolean;
+};
+
+type InstalledHookEntry = {
+  text: string;
+  groupIndex: number;
+  handlerIndex: number;
+  entry: JsonObject;
+  stateMoves: CodexHookStateKeyMove[];
+  removedManagedStateKeys: string[];
+};
+
+type CodexHookStateKeyMove = {
+  from: string;
+  to: string;
 };
 
 const MANIFEST_FILENAME = ".zeus-install.json";
@@ -329,21 +353,81 @@ function removeManagedHookHandlers(text: string, paths: AgentPaths): string {
   return updated;
 }
 
-function installHookEntry(text: string, paths: AgentPaths): string {
-  const updated = removeManagedHookHandlers(text, paths);
-  const currentEntries = readHookEntries(updated, paths);
-  const canonical = canonicalHookEntry(paths);
-
-  if (currentEntries.length > 0) {
-    return applyJsonModification(
-      updated,
-      ["hooks", paths.hookEvent, currentEntries.length],
-      canonical,
-      true,
+async function installHookEntry(
+  text: string,
+  paths: AgentPaths,
+): Promise<InstalledHookEntry> {
+  const existingEntries = readHookEntries(text, paths);
+  const existingManagedHandlers = existingEntries.flatMap((entry, groupIndex) => {
+    if (!isObject(entry) || !Array.isArray(entry.hooks)) {
+      return [];
+    }
+    return entry.hooks.flatMap((hook, handlerIndex) =>
+      isObject(hook) && isManagedHookCommand(hook.command, paths)
+        ? [{ groupIndex, handlerIndex }]
+        : [],
     );
+  });
+  const canonical = canonicalHookEntry(paths);
+  const canonicalHandlers = canonical.hooks;
+  if (!Array.isArray(canonicalHandlers) || !isObject(canonicalHandlers[0])) {
+    throw new Error("Cannot install hook: canonical hook is invalid.");
   }
 
-  return applyJsonModification(updated, ["hooks", paths.hookEvent], [canonical]);
+  if (existingManagedHandlers.length === 1) {
+    const { groupIndex, handlerIndex } = existingManagedHandlers[0]!;
+    const existingEntry = existingEntries[groupIndex];
+    const standalone =
+      isObject(existingEntry) &&
+      Array.isArray(existingEntry.hooks) &&
+      existingEntry.hooks.length === 1;
+    if (paths.agent === "codex" || standalone) {
+      const updatedText = standalone
+        ? applyJsonModification(
+            text,
+            ["hooks", paths.hookEvent, groupIndex],
+            canonical,
+          )
+        : applyJsonModification(
+            text,
+            ["hooks", paths.hookEvent, groupIndex, "hooks", handlerIndex],
+            canonicalHandlers[0],
+          );
+      const installedEntry = readHookEntries(updatedText, paths)[groupIndex];
+      if (!isObject(installedEntry)) {
+        throw new Error("Cannot install hook: updated hook group is invalid.");
+      }
+      return {
+        text: updatedText,
+        groupIndex,
+        handlerIndex: standalone ? 0 : handlerIndex,
+        entry: installedEntry,
+        stateMoves: [],
+        removedManagedStateKeys: [],
+      };
+    }
+  }
+
+  const updated = removeManagedHookHandlers(text, paths);
+  const currentEntries = readHookEntries(updated, paths);
+  const groupIndex = currentEntries.length;
+  const textWithHook = currentEntries.length > 0
+    ? applyJsonModification(
+        updated,
+        ["hooks", paths.hookEvent, currentEntries.length],
+        canonical,
+        true,
+      )
+    : applyJsonModification(updated, ["hooks", paths.hookEvent], [canonical]);
+
+  return {
+    text: textWithHook,
+    groupIndex,
+    handlerIndex: 0,
+    entry: canonical,
+    stateMoves: await codexHookStateKeyMoves(text, paths),
+    removedManagedStateKeys: await codexManagedHookStateKeys(text, paths),
+  };
 }
 
 function uninstallHookEntry(text: string, paths: AgentPaths): string {
@@ -385,16 +469,395 @@ function parseToml(text: string, path: string): JsonObject {
   }
 }
 
-function findFeaturesTable(lines: string[]): { start: number; end: number } | undefined {
-  const start = lines.findIndex((line) => /^\s*\[features]\s*(?:#.*)?$/.test(line));
+function canonicalJson(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalJson);
+  }
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalJson(value[key])]),
+    );
+  }
+  return value;
+}
+
+async function canonicalizePendingDirectory(path: string): Promise<string> {
+  let current = path;
+  const missingSegments: string[] = [];
+
+  while (true) {
+    try {
+      return join(await realpath(current), ...missingSegments);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+      const parent = dirname(current);
+      if (parent === current) {
+        throw error;
+      }
+      missingSegments.unshift(basename(current));
+      current = parent;
+    }
+  }
+}
+
+async function codexHooksIdentityPath(paths: AgentPaths): Promise<string> {
+  const hooksDirectory = paths.canonicalizeCodexHome
+    ? await canonicalizePendingDirectory(dirname(paths.hooksConfigPath))
+    : dirname(paths.hooksConfigPath);
+  return join(hooksDirectory, basename(paths.hooksConfigPath));
+}
+
+async function codexHookTrustIdentity(
+  paths: AgentPaths,
+  installedHook: InstalledHookEntry,
+): Promise<{ key: string; trustedHash: string }> {
+  const handlers = installedHook.entry.hooks;
+  const handler = Array.isArray(handlers) ? handlers[installedHook.handlerIndex] : undefined;
+  if (!isObject(handler)) {
+    throw new Error("Cannot calculate Codex hook trust: installed hook is invalid.");
+  }
+  const matcher = installedHook.entry.matcher;
+  if (matcher !== undefined && typeof matcher !== "string") {
+    throw new Error("Cannot calculate Codex hook trust: hook matcher is invalid.");
+  }
+
+  const identity = canonicalJson({
+    event_name: "session_start",
+    ...(typeof matcher === "string" ? { matcher } : {}),
+    hooks: [{ ...handler, async: false }],
+  });
+  const trustedHash = `sha256:${createHash("sha256")
+    .update(JSON.stringify(identity))
+    .digest("hex")}`;
+
+  const hooksPath = await codexHooksIdentityPath(paths);
+  return {
+    key: `${hooksPath}:session_start:${installedHook.groupIndex}:${installedHook.handlerIndex}`,
+    trustedHash,
+  };
+}
+
+async function codexHookStateKeyMoves(
+  text: string,
+  paths: AgentPaths,
+): Promise<CodexHookStateKeyMove[]> {
+  if (paths.agent !== "codex") {
+    return [];
+  }
+
+  const entries = readHookEntries(text, paths);
+  const hooksPath = await codexHooksIdentityPath(paths);
+  const moves: CodexHookStateKeyMove[] = [];
+  let removedGroups = 0;
+
+  entries.forEach((entry, groupIndex) => {
+    if (!isObject(entry) || !Array.isArray(entry.hooks)) {
+      return;
+    }
+    const managedHandlers = entry.hooks.map((hook) =>
+      isObject(hook) && isManagedHookCommand(hook.command, paths),
+    );
+    if (managedHandlers.length > 0 && managedHandlers.every(Boolean)) {
+      removedGroups += 1;
+      return;
+    }
+
+    let removedHandlers = 0;
+    managedHandlers.forEach((managed, handlerIndex) => {
+      if (managed) {
+        removedHandlers += 1;
+        return;
+      }
+      const newGroupIndex = groupIndex - removedGroups;
+      const newHandlerIndex = handlerIndex - removedHandlers;
+      if (newGroupIndex === groupIndex && newHandlerIndex === handlerIndex) {
+        return;
+      }
+      moves.push({
+        from: `${hooksPath}:session_start:${groupIndex}:${handlerIndex}`,
+        to: `${hooksPath}:session_start:${newGroupIndex}:${newHandlerIndex}`,
+      });
+    });
+  });
+
+  return moves;
+}
+
+async function codexManagedHookStateKeys(
+  text: string,
+  paths: AgentPaths,
+): Promise<string[]> {
+  if (paths.agent !== "codex") {
+    return [];
+  }
+
+  const entries = readHookEntries(text, paths);
+  const hooksPath = await codexHooksIdentityPath(paths);
+  return entries.flatMap((entry, groupIndex) => {
+    if (!isObject(entry) || !Array.isArray(entry.hooks)) {
+      return [];
+    }
+    return entry.hooks.flatMap((hook, handlerIndex) =>
+      isObject(hook) && isManagedHookCommand(hook.command, paths)
+        ? [`${hooksPath}:session_start:${groupIndex}:${handlerIndex}`]
+        : [],
+    );
+  });
+}
+
+function readCodexHookTrustEntry(
+  text: string,
+  path: string,
+  key: string,
+): { exists: boolean; trustedHash: string | null } {
+  const parsed = parseToml(text, path);
+  const hooks = parsed.hooks;
+  if (hooks === undefined) {
+    return { exists: false, trustedHash: null };
+  }
+  if (!isObject(hooks)) {
+    throw new Error(`Cannot safely edit ${path}: "hooks" must be a table.`);
+  }
+
+  const state = hooks.state;
+  if (state === undefined) {
+    return { exists: false, trustedHash: null };
+  }
+  if (!isObject(state)) {
+    throw new Error(`Cannot safely edit ${path}: hooks.state must be a table.`);
+  }
+
+  const entry = state[key];
+  if (entry === undefined) {
+    return { exists: false, trustedHash: null };
+  }
+  if (!isObject(entry)) {
+    throw new Error(`Cannot safely edit ${path}: Codex hook state must be a table.`);
+  }
+
+  const trustedHash = entry.trusted_hash;
+  if (trustedHash !== undefined && typeof trustedHash !== "string") {
+    throw new Error(`Cannot safely edit ${path}: hook trusted_hash must be a string.`);
+  }
+  return {
+    exists: true,
+    trustedHash: typeof trustedHash === "string" ? trustedHash : null,
+  };
+}
+
+function findTomlTable(
+  lines: string[],
+  header: string,
+): { start: number; end: number } | undefined {
+  const escapedHeader = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const headerPattern = new RegExp(`^\\s*${escapedHeader}\\s*(?:#.*)?$`);
+  const start = lines.findIndex((line) => headerPattern.test(line));
   if (start < 0) {
     return undefined;
   }
-
   const nextTable = lines.findIndex(
-    (line, index) => index > start && /^\s*\[[^\]]+]\s*(?:#.*)?$/.test(line),
+    (line, index) =>
+      index > start &&
+      /^\s*\[(?:\[[^\]]+]\]|[^\]]+)]\s*(?:#.*)?$/.test(line),
   );
   return { start, end: nextTable < 0 ? lines.length : nextTable };
+}
+
+function codexHookStateHeader(key: string): string {
+  return `[hooks.state.${JSON.stringify(key)}]`;
+}
+
+const TRUSTED_HASH_LINE = /^(\s*trusted_hash\s*=\s*)(?:"(?:\\.|[^"\\])*"|'[^']*')(\s*(?:#.*)?)$/;
+
+function setCodexHookTrustedHash(
+  text: string,
+  path: string,
+  key: string,
+  trustedHash: string,
+): string {
+  const current = readCodexHookTrustEntry(text, path, key);
+  const { lines, eol, trailing } = splitLines(text);
+  const header = codexHookStateHeader(key);
+  const table = findTomlTable(lines, header);
+
+  if (current.exists) {
+    if (!table) {
+      throw new Error(
+        `Cannot safely edit ${path}: use a dedicated ${header} table for hook state.`,
+      );
+    }
+    const hashIndex = lines.findIndex(
+      (line, index) => index > table.start && index < table.end && TRUSTED_HASH_LINE.test(line),
+    );
+    if (current.trustedHash !== null && hashIndex < 0) {
+      throw new Error(`Cannot safely edit ${path}: hook trusted_hash must be single-line.`);
+    }
+    if (hashIndex >= 0) {
+      lines[hashIndex] = lines[hashIndex]?.replace(
+        TRUSTED_HASH_LINE,
+        `$1${JSON.stringify(trustedHash)}$2`,
+      ) ?? "";
+    } else {
+      lines.splice(table.end, 0, `trusted_hash = ${JSON.stringify(trustedHash)}`);
+    }
+  } else {
+    if (lines.length > 0 && lines.some((line) => line.trim() !== "")) {
+      lines.push("");
+    }
+    lines.push(header, `trusted_hash = ${JSON.stringify(trustedHash)}`);
+  }
+
+  return joinLines(lines, eol, trailing || text.length === 0);
+}
+
+function restoreCodexHookTrust(
+  text: string,
+  path: string,
+  state: CodexHookTrustState,
+): string {
+  const current = readCodexHookTrustEntry(text, path, state.key);
+  if (!current.exists || current.trustedHash !== state.trustedHash) {
+    return text;
+  }
+  if (state.previousTrustedHash !== null) {
+    return setCodexHookTrustedHash(text, path, state.key, state.previousTrustedHash);
+  }
+
+  const { lines, eol, trailing } = splitLines(text);
+  const table = findTomlTable(lines, codexHookStateHeader(state.key));
+  if (!table) {
+    return text;
+  }
+  const hashIndex = lines.findIndex(
+    (line, index) => index > table.start && index < table.end && TRUSTED_HASH_LINE.test(line),
+  );
+  if (hashIndex < 0) {
+    return text;
+  }
+  lines.splice(hashIndex, 1);
+
+  const refreshed = findTomlTable(lines, codexHookStateHeader(state.key));
+  if (
+    refreshed &&
+    !state.stateTableExisted &&
+    lines.slice(refreshed.start + 1, refreshed.end).every((line) => line.trim() === "")
+  ) {
+    lines.splice(refreshed.start, refreshed.end - refreshed.start);
+  }
+  return joinLines(lines, eol, trailing);
+}
+
+function removeCodexHookStateTables(
+  text: string,
+  path: string,
+  keys: string[],
+): string {
+  let updated = text;
+  for (const key of keys) {
+    const current = readCodexHookTrustEntry(updated, path, key);
+    if (!current.exists) {
+      continue;
+    }
+    const { lines, eol, trailing } = splitLines(updated);
+    const header = codexHookStateHeader(key);
+    const table = findTomlTable(lines, header);
+    if (!table) {
+      throw new Error(
+        `Cannot safely edit ${path}: use a dedicated ${header} table for hook state.`,
+      );
+    }
+    lines.splice(table.start, table.end - table.start);
+    updated = joinLines(lines, eol, trailing);
+  }
+  return updated;
+}
+
+function migrateCodexHookStateKeys(
+  text: string,
+  path: string,
+  moves: CodexHookStateKeyMove[],
+): string {
+  if (moves.length === 0) {
+    return text;
+  }
+
+  const parsed = parseToml(text, path);
+  const hooks = parsed.hooks;
+  const state = isObject(hooks) && isObject(hooks.state) ? hooks.state : {};
+  const activeMoves = moves.filter(({ from }) => state[from] !== undefined);
+  if (activeMoves.length === 0) {
+    return text;
+  }
+
+  const sourceKeys = new Set(activeMoves.map(({ from }) => from));
+  for (const { to } of activeMoves) {
+    if (state[to] !== undefined && !sourceKeys.has(to)) {
+      throw new Error(
+        `Cannot safely edit ${path}: hook state migration would overwrite ${to}.`,
+      );
+    }
+  }
+
+  const { lines, eol, trailing } = splitLines(text);
+  for (const { from, to } of activeMoves) {
+    const sourceHeader = codexHookStateHeader(from);
+    const table = findTomlTable(lines, sourceHeader);
+    if (!table) {
+      throw new Error(
+        `Cannot safely edit ${path}: use a dedicated ${sourceHeader} table for hook state.`,
+      );
+    }
+    lines[table.start] = lines[table.start]!.replace(
+      sourceHeader,
+      codexHookStateHeader(to),
+    );
+  }
+  return joinLines(lines, eol, trailing);
+}
+
+function installCodexHookTrust(
+  text: string,
+  path: string,
+  identity: { key: string; trustedHash: string },
+  existingState?: CodexHookTrustState,
+  stateMoves: CodexHookStateKeyMove[] = [],
+  removedManagedStateKeys: string[] = [],
+): { text: string; state: CodexHookTrustState } {
+  let updated = text;
+  if (existingState && existingState.key !== identity.key) {
+    updated = restoreCodexHookTrust(updated, path, existingState);
+  }
+  updated = removeCodexHookStateTables(
+    updated,
+    path,
+    removedManagedStateKeys.filter((key) => key !== existingState?.key),
+  );
+  updated = migrateCodexHookStateKeys(updated, path, stateMoves);
+
+  const current = readCodexHookTrustEntry(updated, path, identity.key);
+  const state =
+    existingState?.key === identity.key &&
+    current.trustedHash === existingState.trustedHash
+      ? { ...existingState, trustedHash: identity.trustedHash }
+      : {
+          key: identity.key,
+          trustedHash: identity.trustedHash,
+          stateTableExisted: current.exists,
+          previousTrustedHash: current.trustedHash,
+        };
+
+  return {
+    text: setCodexHookTrustedHash(updated, path, identity.key, identity.trustedHash),
+    state,
+  };
+}
+
+function findFeaturesTable(lines: string[]): { start: number; end: number } | undefined {
+  return findTomlTable(lines, "[features]");
 }
 
 function installCodexFeature(
@@ -525,7 +988,7 @@ async function readManifest(path: string): Promise<InstallManifest | undefined> 
   }
   if (
     !isObject(value) ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     (value.agent !== "claude" && value.agent !== "codex") ||
     typeof value.hooksFileExisted !== "boolean"
   ) {
@@ -542,6 +1005,20 @@ async function readManifest(path: string): Promise<InstallManifest | undefined> 
       (feature.previousValue !== null && typeof feature.previousValue !== "boolean")
     ) {
       throw new Error(`Cannot safely continue: ${path} has invalid Codex ownership data.`);
+    }
+  }
+
+  if (value.codexHookTrust !== undefined) {
+    const trust = value.codexHookTrust;
+    if (
+      !isObject(trust) ||
+      typeof trust.key !== "string" ||
+      typeof trust.trustedHash !== "string" ||
+      typeof trust.stateTableExisted !== "boolean" ||
+      (trust.previousTrustedHash !== null &&
+        typeof trust.previousTrustedHash !== "string")
+    ) {
+      throw new Error(`Cannot safely continue: ${path} has invalid Codex hook trust data.`);
     }
   }
 
@@ -574,6 +1051,7 @@ function agentPaths(options: InstallerOptions, agent: AgentName): AgentPaths {
     hookEvent: agent === "claude" ? "PostCompact" : "SessionStart",
     hookMatcher: agent === "claude" ? "manual|auto" : "compact",
     codexConfigPath: agent === "codex" ? join(rootDir, "config.toml") : undefined,
+    canonicalizeCodexHome: agent === "codex" && options.codexHome !== undefined,
   };
 }
 
@@ -587,9 +1065,10 @@ async function prepareInstall(paths: AgentPaths): Promise<Operation[]> {
   }
   const hooksConfig = await readOptional(paths.hooksConfigPath);
   const originalHooksText = hooksConfig.exists ? hooksConfig.content : "{}\n";
-  const updatedHooksText = installHookEntry(originalHooksText, paths);
+  const installedHook = await installHookEntry(originalHooksText, paths);
 
   let codexFeature: CodexFeatureState | undefined;
+  let codexHookTrust: CodexHookTrustState | undefined;
   const operations: Operation[] = [
     {
       kind: "write",
@@ -601,7 +1080,7 @@ async function prepareInstall(paths: AgentPaths): Promise<Operation[]> {
     {
       kind: "write",
       path: paths.hooksConfigPath,
-      content: updatedHooksText,
+      content: installedHook.text,
       preserveSymlink: true,
       description: `Register ${paths.hookEvent} hook for ${paths.agent}`,
     },
@@ -615,20 +1094,30 @@ async function prepareInstall(paths: AgentPaths): Promise<Operation[]> {
       config.exists,
     );
     codexFeature = existingManifest?.codexFeature ?? updated.state;
+    const trusted = installCodexHookTrust(
+      updated.text,
+      paths.codexConfigPath,
+      await codexHookTrustIdentity(paths, installedHook),
+      existingManifest?.codexHookTrust,
+      installedHook.stateMoves,
+      installedHook.removedManagedStateKeys,
+    );
+    codexHookTrust = trusted.state;
     operations.push({
       kind: "write",
       path: paths.codexConfigPath,
-      content: updated.text,
+      content: trusted.text,
       preserveSymlink: true,
-      description: "Enable Codex hooks feature",
+      description: "Enable and trust the Codex hook",
     });
   }
 
   const manifest: InstallManifest = {
-    version: 1,
+    version: 2,
     agent: paths.agent,
     hooksFileExisted: existingManifest?.hooksFileExisted ?? hooksConfig.exists,
     ...(codexFeature ? { codexFeature } : {}),
+    ...(codexHookTrust ? { codexHookTrust } : {}),
   };
   operations.push({
     kind: "write",
@@ -653,6 +1142,12 @@ async function prepareUninstall(
   const hooksConfig = await readOptional(paths.hooksConfigPath);
   const operations: Operation[] = [];
   let updatedHooksText = hooksConfig.content;
+  const codexStateMoves = hooksConfig.exists
+    ? await codexHookStateKeyMoves(hooksConfig.content, paths)
+    : [];
+  const codexManagedStateKeys = hooksConfig.exists
+    ? await codexManagedHookStateKeys(hooksConfig.content, paths)
+    : [];
 
   if (hooksConfig.exists) {
     updatedHooksText = uninstallHookEntry(hooksConfig.content, paths);
@@ -680,18 +1175,39 @@ async function prepareUninstall(
 
   if (
     paths.agent === "codex" &&
-    paths.codexConfigPath &&
-    manifest?.codexFeature
+    paths.codexConfigPath
   ) {
     const config = await readOptional(paths.codexConfigPath);
     if (config.exists) {
-      const restored = restoreCodexFeature(
-        config.content,
+      let restored = manifest?.codexHookTrust
+        ? restoreCodexHookTrust(
+            config.content,
+            paths.codexConfigPath,
+            manifest.codexHookTrust,
+          )
+        : config.content;
+      restored = removeCodexHookStateTables(
+        restored,
         paths.codexConfigPath,
-        manifest.codexFeature,
+        codexManagedStateKeys.filter(
+          (key) => key !== manifest?.codexHookTrust?.key,
+        ),
       );
+      restored = migrateCodexHookStateKeys(
+        restored,
+        paths.codexConfigPath,
+        codexStateMoves,
+      );
+      if (manifest?.codexFeature) {
+        restored = restoreCodexFeature(
+          restored,
+          paths.codexConfigPath,
+          manifest.codexFeature,
+        );
+      }
       const restoredConfig = parseToml(restored, paths.codexConfigPath);
       if (
+        manifest?.codexFeature &&
         !manifest.codexFeature.configFileExisted &&
         Object.keys(restoredConfig).length === 0 &&
         restored.trim() === ""
@@ -707,7 +1223,7 @@ async function prepareUninstall(
           path: paths.codexConfigPath,
           content: restored,
           preserveSymlink: true,
-          description: "Restore the previous Codex hooks feature value",
+          description: "Restore the previous Codex hook settings",
         });
       }
     }

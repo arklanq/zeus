@@ -12,7 +12,7 @@ curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
 
 The shell installer detects the operating system and CPU architecture, downloads the matching standalone executable from GitHub Releases, verifies its SHA-256 checksum, and runs it.
 
-The executable is installed to `~/.local/bin/zeus`. It installs the appropriate SKILL for each agent, merges the hook configuration idempotently into `~/.claude/settings.json` and `~/.codex/hooks.json`, and enables Codex hooks in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set.
+The executable is installed to `~/.local/bin/zeus`. It installs the appropriate SKILL for each agent, merges the hook configuration idempotently into `~/.claude/settings.json` and `~/.codex/hooks.json`, and enables and trusts the exact Codex hook definition in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set.
 
 Pin a release or limit the installation when needed:
 
