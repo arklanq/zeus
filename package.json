@@ -11,6 +11,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "check": "bun run typecheck && bun run build:check && bun run test && bash -n install.sh",
+    "catalog:update": "bun run src/update-catalog.ts",
     "zeus:install": "bun run build:binary && ./release/zeus install",
     "zeus:uninstall": "${ZEUS_BIN_DIR:-$HOME/.local/bin}/zeus uninstall"
   },

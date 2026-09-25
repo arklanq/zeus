@@ -1,0 +1,150 @@
+{
+  "capturedAt": "2026-09-26",
+  "catalogs": {
+    "claude": {
+      "source": "Anthropic documentation",
+      "models": [
+        {
+          "id": "claude-fable-5-1",
+          "displayName": "Claude Fable 5.1",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "high"
+        },
+        {
+          "id": "claude-opus-5-5",
+          "displayName": "Claude Opus 5.5",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "medium"
+        },
+        {
+          "id": "claude-sonnet-5",
+          "displayName": "Claude Sonnet 5",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "high"
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "displayName": "Claude Haiku 4.5",
+          "efforts": []
+        }
+      ]
+    },
+    "codex": {
+      "source": "Codex app-server model/list",
+      "models": [
+        {
+          "id": "gpt-6-astra",
+          "displayName": "GPT-6-Astra",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": true
+        },
+        {
+          "id": "gpt-6-sol",
+          "displayName": "GPT-6-Sol",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": false
+        },
+        {
+          "id": "gpt-6-luna",
+          "displayName": "GPT-6-Luna",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": false
+        },
+        {
+          "id": "gpt-5.6-sol",
+          "displayName": "GPT-5.6-Sol",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "defaultEffort": "low",
+          "isDefault": false
+        },
+        {
+          "id": "gpt-5.6-terra",
+          "displayName": "GPT-5.6-Terra",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": false
+        },
+        {
+          "id": "gpt-5.6-luna",
+          "displayName": "GPT-5.6-Luna",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": false
+        },
+        {
+          "id": "gpt-5.5",
+          "displayName": "GPT-5.5",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "defaultEffort": "medium",
+          "isDefault": false
+        }
+      ]
+    }
+  }
+}
