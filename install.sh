@@ -121,10 +121,23 @@ fi
 
 chmod +x "$binary_path"
 
+# Prints the terminal device path, e.g. /dev/ttys001. The Zeus binary cannot read from /dev/tty
+# itself on macOS: kqueue does not support that device, so keystrokes never arrive.
+terminal_device() {
+  local name
+  name="$(ps -o tty= -p "$$" 2>/dev/null | tr -d '[:space:]')"
+  case "$name" in
+    ""|"?"|"??") return 1 ;;
+  esac
+  [ -c "/dev/${name}" ] && [ -r "/dev/${name}" ] || return 1
+  printf '/dev/%s\n' "$name"
+}
+
 # With `curl | bash`, stdin is the script itself; read the setup wizard's answers from the terminal.
 run_installer() {
-  if [ ! -t 0 ] && { : </dev/tty; } 2>/dev/null; then
-    "$@" </dev/tty
+  local device
+  if [ ! -t 0 ] && device="$(terminal_device)"; then
+    "$@" <"$device"
   else
     "$@"
   fi
