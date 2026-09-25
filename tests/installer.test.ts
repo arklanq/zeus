@@ -17,6 +17,10 @@ import { parse } from "jsonc-parser";
 import { runInstaller } from "../src/installer.ts";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const workerSettings = {
+  claude: { model: "claude-opus-5-5", effort: "high" },
+  codex: { model: "gpt-6-sol", effort: "xhigh" },
+};
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -113,6 +117,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
     await runInstaller({ ...options, agents: [...options.agents] });
     await runInstaller({ ...options, agents: [...options.agents] });
@@ -170,6 +175,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
     await runInstaller({ ...common, action: "install" });
     const installedConfig = Bun.TOML.parse(await readFile(codexConfig, "utf8")) as {
@@ -228,6 +234,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -249,6 +256,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -282,6 +290,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -353,6 +362,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -419,6 +429,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -467,6 +478,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
 
     await runInstaller({ ...common, action: "install" });
@@ -538,6 +550,7 @@ describe("Zeus installer", () => {
         binarySourcePath: join(projectDir, "install.sh"),
         binaryInstallDir: join(homeDir, ".local", "bin"),
         log: () => {},
+        workerSettings,
       }),
     ).rejects.toThrow("Cannot safely edit");
     expect(
@@ -559,10 +572,70 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     expect(await stat(join(homeDir, ".claude")).then(() => true, () => false)).toBe(false);
     expect(await stat(join(homeDir, ".codex")).then(() => true, () => false)).toBe(false);
+    expect(await stat(join(homeDir, ".zeus")).then(() => true, () => false)).toBe(false);
+  });
+
+  test("installs the chosen worker settings and records them", async () => {
+    const homeDir = await temporaryHome();
+    const configPath = join(homeDir, ".zeus", "config.json");
+    const common = {
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+    };
+    await runInstaller({
+      ...common,
+      action: "install",
+      agents: ["claude", "codex"],
+      workerSettings,
+    });
+
+    const claudeSkill = await readFile(join(homeDir, ".claude", "skills", "zeus", "SKILL.md"), "utf8");
+    const codexSkill = await readFile(join(homeDir, ".codex", "skills", "zeus", "SKILL.md"), "utf8");
+    expect(claudeSkill).toContain('`model: "claude-opus-5-5"` and `effort: "high"`');
+    expect(codexSkill).toContain('`model: "gpt-6-sol"` and `thinking: "xhigh"`');
+    expect(claudeSkill).not.toContain("<zeus:worker-settings>");
+    expect(codexSkill).not.toContain("<zeus:worker-settings>");
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ version: 1, workers: workerSettings });
+
+    const codexOnly = { codex: { model: "gpt-6-luna", effort: "low" } };
+    await runInstaller({ ...common, action: "install", agents: ["codex"], workerSettings: codexOnly });
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      workers: { claude: workerSettings.claude, ...codexOnly },
+    });
+
+    await runInstaller({ ...common, action: "uninstall", agents: ["claude"] });
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ version: 1, workers: codexOnly });
+
+    await runInstaller({ ...common, action: "uninstall", agents: ["codex"] });
+    expect(await stat(configPath).then(() => true, () => false)).toBe(false);
+  });
+
+  test("requires worker settings for every installed agent", async () => {
+    const homeDir = await temporaryHome();
+    await expect(
+      runInstaller({
+        action: "install",
+        agents: ["claude", "codex"],
+        dryRun: false,
+        homeDir,
+        packageDir: projectDir,
+        binarySourcePath: join(projectDir, "install.sh"),
+        binaryInstallDir: join(homeDir, ".local", "bin"),
+        log: () => {},
+        workerSettings: { claude: workerSettings.claude },
+      }),
+    ).rejects.toThrow("Worker settings for codex are required");
+    expect(await stat(join(homeDir, ".claude")).then(() => true, () => false)).toBe(false);
   });
 
   test("registers the standalone executable as the hook", async () => {
@@ -576,6 +649,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     const settings = JSON.parse(
@@ -620,6 +694,7 @@ describe("Zeus installer", () => {
       packageDir: projectDir,
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     const settings = JSON.parse(await readFile(settingsPath, "utf8")) as Record<
@@ -665,6 +740,7 @@ describe("Zeus installer", () => {
       packageDir: projectDir,
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     const text = await readFile(settingsPath, "utf8");
@@ -705,6 +781,7 @@ describe("Zeus installer", () => {
       packageDir: projectDir,
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     const settings = JSON.parse(await readFile(settingsPath, "utf8")) as Record<
@@ -736,6 +813,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     };
     await runInstaller({ ...options, action: "install", agents: [...options.agents] });
     expect((await lstat(settingsPath)).isSymbolicLink()).toBe(true);
@@ -762,6 +840,7 @@ describe("Zeus installer", () => {
       binarySourcePath: join(projectDir, "install.sh"),
       binaryInstallDir: join(homeDir, ".local", "bin"),
       log: () => {},
+      workerSettings,
     });
 
     const config = Bun.TOML.parse(

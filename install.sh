@@ -12,11 +12,15 @@ usage() {
 Usage: install.sh [--version <tag>] [Zeus installer options]
 
 Options:
-  --version <tag>  Install a specific release, for example v1.2.3.
-  --dry-run        Show changes without writing files.
-  --skip-claude    Do not configure Claude Code.
-  --skip-codex     Do not configure Codex.
-  -h, --help       Show this help.
+  --version <tag>                  Install a specific release, for example v1.2.3.
+  --dry-run                        Show changes without writing files.
+  --skip-claude                    Do not configure Claude Code.
+  --skip-codex                     Do not configure Codex.
+  --claude-worker-model <id>       Claude worker model; skips the wizard for Claude.
+  --claude-worker-effort <level>   Claude worker effort (defaults to the model default).
+  --codex-worker-model <id>        Codex worker model; skips the wizard for Codex.
+  --codex-worker-effort <level>    Codex worker effort (defaults to the model default).
+  -h, --help                       Show this help.
 EOF
 }
 
@@ -37,6 +41,14 @@ while [ "$#" -gt 0 ]; do
     --dry-run|--skip-claude|--skip-codex)
       installer_args+=("$1")
       shift
+      ;;
+    --claude-worker-model|--claude-worker-effort|--codex-worker-model|--codex-worker-effort)
+      if [ -z "${2:-}" ] || [[ "$2" == --* ]]; then
+        echo "$1 requires a value." >&2
+        exit 1
+      fi
+      installer_args+=("$1" "$2")
+      shift 2
       ;;
     v[0-9]*)
       if [ "$VERSION" != "latest" ]; then
@@ -108,10 +120,20 @@ if [ "$actual_checksum" != "$expected_checksum" ]; then
 fi
 
 chmod +x "$binary_path"
+
+# With `curl | bash`, stdin is the script itself; read the setup wizard's answers from the terminal.
+run_installer() {
+  if [ ! -t 0 ] && { : </dev/tty; } 2>/dev/null; then
+    "$@" </dev/tty
+  else
+    "$@"
+  fi
+}
+
 if [ "${#installer_args[@]}" -eq 0 ]; then
-  "$binary_path" install
+  run_installer "$binary_path" install
 else
-  "$binary_path" install "${installer_args[@]}"
+  run_installer "$binary_path" install "${installer_args[@]}"
 fi
 
 install_dir="${ZEUS_BIN_DIR:-$HOME/.local/bin}"

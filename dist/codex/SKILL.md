@@ -89,7 +89,7 @@ Zeus uses the name `Zeus`, while a worker uses its assigned name. The initial as
 
 ## Worker model and lifecycle
 
-Do not change Zeus's model while delegating. When creating and continuing a worker thread, explicitly pass `model: "gpt-5.6-sol"` and `thinking: "high"` unless the user requests other settings. Defaults or a model name written inside the assignment are insufficient. If those parameters are unavailable, agree on a substitute with the user before starting the assignment.
+Do not change Zeus's model while delegating. When creating and continuing a worker thread, explicitly pass <zeus:worker-settings> unless the user requests other settings. Defaults or a model name written inside the assignment are insufficient. If those parameters are unavailable, agree on a substitute with the user before starting the assignment.
 
 A worker session handles one bounded assignment in one workstream; workers do not form a permanent pool. Resume it only while its original assignment remains open, such as for clarification, in-scope corrections, or verification. After Zeus accepts its result, stop monitoring it and do not wake it for new work. Every later independent task requires a new session and a new worker, regardless of shared repository, feature, or expertise.
 

@@ -76,4 +76,19 @@ describe("install.sh", () => {
     await runInstallScript(root, invocationPath, ["--skip-codex"]);
     expect(await readFile(invocationPath, "utf8")).toBe("install --skip-codex\n");
   });
+
+  test("forwards worker settings with their values", async () => {
+    const { root, invocationPath } = await releaseFixture();
+    await runInstallScript(root, invocationPath, [
+      "--codex-worker-model",
+      "gpt-6-sol",
+      "--codex-worker-effort",
+      "high",
+      "--claude-worker-model",
+      "claude-opus-5-5",
+    ]);
+    expect(await readFile(invocationPath, "utf8")).toBe(
+      "install --codex-worker-model gpt-6-sol --codex-worker-effort high --claude-worker-model claude-opus-5-5\n",
+    );
+  });
 });

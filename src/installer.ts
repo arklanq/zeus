@@ -25,6 +25,16 @@ import {
 } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 
+import {
+  describeWorkerSettings,
+  readZeusConfig,
+  renderInstalledSkill,
+  serializeZeusConfig,
+  zeusConfigPath,
+  type WorkerSettings,
+  type WorkerSettingsByAgent,
+} from "./worker-settings.ts";
+
 export type AgentName = "claude" | "codex";
 
 type JsonObject = Record<string, unknown>;
@@ -78,6 +88,7 @@ type InstallerOptions = {
   binaryInstallDir?: string;
   claudeConfigDir?: string;
   codexHome?: string;
+  workerSettings?: WorkerSettingsByAgent;
   log?: (message: string) => void;
 };
 
@@ -1055,8 +1066,15 @@ function agentPaths(options: InstallerOptions, agent: AgentName): AgentPaths {
   };
 }
 
-async function prepareInstall(paths: AgentPaths): Promise<Operation[]> {
-  const skillSource = await readFile(paths.skillSourcePath, "utf8");
+async function prepareInstall(
+  paths: AgentPaths,
+  workerSettings: WorkerSettings,
+): Promise<Operation[]> {
+  const skillSource = renderInstalledSkill(
+    await readFile(paths.skillSourcePath, "utf8"),
+    paths.agent,
+    workerSettings,
+  );
   const existingManifest = await readManifest(paths.manifestPath);
   if (existingManifest && existingManifest.agent !== paths.agent) {
     throw new Error(
@@ -1319,6 +1337,51 @@ async function removeEmptySkillDirectories(paths: AgentPaths[]): Promise<void> {
   }
 }
 
+async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]> {
+  const path = zeusConfigPath(options.homeDir);
+  const existing = await readZeusConfig(path);
+  const workers: WorkerSettingsByAgent = { ...existing?.workers };
+
+  if (options.action === "uninstall") {
+    if (!existing || !options.agents.some((agent) => workers[agent])) {
+      return [];
+    }
+    for (const agent of options.agents) {
+      delete workers[agent];
+    }
+    if (Object.keys(workers).length === 0) {
+      return [{ kind: "delete", path, description: "Remove Zeus worker settings" }];
+    }
+    return [
+      {
+        kind: "write",
+        path,
+        content: serializeZeusConfig({ version: 1, workers }),
+        mode: 0o644,
+        description: `Remove ${options.agents.join(" and ")} worker settings`,
+      },
+    ];
+  }
+
+  const recorded = options.agents.map((agent) => {
+    const settings = options.workerSettings?.[agent];
+    if (!settings) {
+      throw new Error(`Worker settings for ${agent} are required for installation.`);
+    }
+    workers[agent] = settings;
+    return `${agent}: ${describeWorkerSettings(settings)}`;
+  });
+  return [
+    {
+      kind: "write",
+      path,
+      content: serializeZeusConfig({ version: 1, workers }),
+      mode: 0o644,
+      description: `Record worker settings (${recorded.join(", ")})`,
+    },
+  ];
+}
+
 export async function runInstaller(options: InstallerOptions): Promise<void> {
   if (options.agents.length === 0) {
     throw new Error("At least one agent must be selected.");
@@ -1327,12 +1390,18 @@ export async function runInstaller(options: InstallerOptions): Promise<void> {
   const log = options.log ?? console.log;
   const paths = options.agents.map((agent) => agentPaths(options, agent));
   const plans = await Promise.all(
-    paths.map((agent) =>
-      options.action === "install"
-        ? prepareInstall(agent)
-        : prepareUninstall(agent),
-    ),
+    paths.map((agent) => {
+      if (options.action === "uninstall") {
+        return prepareUninstall(agent);
+      }
+      const workerSettings = options.workerSettings?.[agent.agent];
+      if (!workerSettings) {
+        throw new Error(`Worker settings for ${agent.agent} are required for installation.`);
+      }
+      return prepareInstall(agent, workerSettings);
+    }),
   );
+  plans.push(await prepareZeusConfig(options));
 
   if (options.action === "install") {
     if (!options.binarySourcePath) {
