@@ -1350,7 +1350,7 @@ async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]
       delete workers[agent];
     }
     if (Object.keys(workers).length === 0) {
-      return [{ kind: "delete", path, description: "Remove Zeus worker settings" }];
+      return [{ kind: "delete", path, description: "Remove Zeus Worker settings" }];
     }
     return [
       {
@@ -1358,7 +1358,7 @@ async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]
         path,
         content: serializeZeusConfig({ version: 1, workers }),
         mode: 0o644,
-        description: `Remove ${options.agents.join(" and ")} worker settings`,
+        description: `Remove ${options.agents.join(" and ")} Worker settings`,
       },
     ];
   }
@@ -1377,7 +1377,7 @@ async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]
       path,
       content: serializeZeusConfig({ version: 1, workers }),
       mode: 0o644,
-      description: `Record worker settings (${recorded.join(", ")})`,
+      description: `Record Worker settings (${recorded.join(", ")})`,
     },
   ];
 }

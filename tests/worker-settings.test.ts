@@ -106,14 +106,14 @@ describe("worker settings", () => {
       effort: "medium",
     });
     const [models, efforts] = prompter.selects;
-    expect(models?.message).toBe("Codex worker model");
+    expect(models?.message).toBe("Codex Worker model");
     expect(models?.initialValue).toBe("mid");
     expect(models?.options).toEqual([
       { value: "big", label: "Big", hint: "big" },
       { value: "mid", label: "Mid", hint: "mid · Codex default" },
       { value: "small", label: "Small", hint: "small" },
     ]);
-    expect(efforts?.message).toBe("Codex worker effort for Mid");
+    expect(efforts?.message).toBe("Codex Worker effort for Mid");
     expect(efforts?.initialValue).toBe("medium");
     expect(prompter.printed).toEqual(["Codex models: test."]);
   });

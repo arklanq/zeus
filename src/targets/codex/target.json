@@ -10,6 +10,6 @@
   "refusedStart": "",
   "subagentKind": "internal",
   "workerIdColumn": "Thread ID",
-  "delegationCoordination": "Divide responsibilities so workers do not overwrite one another's work. Run independent chunks in parallel when useful.",
+  "delegationCoordination": "Divide responsibilities so Workers do not overwrite one another's work. Run independent chunks in parallel when useful.",
   "delegationPublication": "After creating a thread, give the user its link or card. Distinguish thread creation, work beginning, and work completion."
 }

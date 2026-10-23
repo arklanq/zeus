@@ -196,7 +196,7 @@ try {
   if (command === "install") {
     const prompter = process.stdin.isTTY ? terminalPrompter : undefined;
     if (prompter) {
-      intro("Zeus worker settings");
+      intro("Zeus Worker settings");
     }
     const resolved = await resolveWorkerSettings({
       agents,
