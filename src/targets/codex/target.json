@@ -1,5 +1,16 @@
 {
+  "sessionNoun": "thread",
+  "workerTitlePrefix": "└─ ",
+  "createTool": "create_thread",
+  "startupArguments": "",
+  "withArgument": "**Invocation with an argument** (`/zeus <zeus-id>`) — use the provided argument as",
+  "withoutArgument": "**Invocation without an argument** (`/zeus`)",
+  "zeusTitleCall": "`set_thread_title` without a `threadId`, using `@ ZEUS {zeus-id}: {action summary}`",
+  "titleTool": "`set_thread_title` without a `threadId`",
+  "followUpMessages": "",
+  "refusedStart": "",
+  "subagentKind": "internal",
   "workerIdColumn": "Thread ID",
-  "delegationCoordination": "Divide responsibilities so workers do not overwrite one another's work. Run independent chunks in parallel when useful.",
+  "delegationCoordination": "Divide responsibilities so Workers do not overwrite one another's work. Run independent chunks in parallel when useful.",
   "delegationPublication": "After creating a thread, give the user its link or card. Distinguish thread creation, work beginning, and work completion."
 }

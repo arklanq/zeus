@@ -126,12 +126,12 @@ export function createHookOutput(
   }
 
   const skillText = concretizeSkill(skill, zeusId);
-  const identity = `This instance's identity is already established as \`${zeusId}\` (restored from the trusted marker in Zeus's first response). The placeholders below have been replaced with that value, and the startup section has been removed because it does not apply to a session that is already running.`;
+  const identity = `This instance's identity is already established as \`${zeusId}\` (restored from the trusted marker in the Coordinator's first response). The placeholders below have been replaced with that value, and the startup section has been removed because it does not apply to a session that is already running.`;
 
   return {
     hookSpecificOutput: {
       hookEventName: agent === "claude" ? "PostCompact" : "SessionStart",
-      additionalContext: `This session's context has just been compacted. You are running it as Zeus.\n\n${identity}\n\nThe full authoritative instructions for the /zeus skill follow. Continue applying them in full even if the compacted context does not include them.\n\n${skillText}`,
+      additionalContext: `This session's context has just been compacted. You are running it as the Coordinator of the /zeus skill.\n\n${identity}\n\nThe full authoritative instructions for the /zeus skill follow. Continue applying them in full even if the compacted context does not include them.\n\n${skillText}`,
     },
   };
 }

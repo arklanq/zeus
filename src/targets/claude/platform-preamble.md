@@ -1,1 +1,1 @@
-Session tools are referenced without prefixes: `mcp__ccd_session__` for `spawn_task` and `mark_chapter`, `mcp__ccd_connectors__` for `session_connectors_status`, and `mcp__ccd_session_mgmt__` for the remaining tools.
+Session tools are referenced without prefixes: `mcp__ccd_session__` for `start_session` and `mcp__ccd_session_mgmt__` for the remaining tools.

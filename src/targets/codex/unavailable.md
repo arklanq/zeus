@@ -1,1 +1,0 @@
-If `create_thread` is unavailable or conflicts with tool constraints, state the specific obstacle and ask the user how to proceed. Do not substitute internal subagents or take over a larger assignment without agreement.

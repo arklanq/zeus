@@ -1,1 +1,0 @@
-If `spawn_task` is unavailable or conflicts with tool constraints, state the specific obstacle and ask the user how to proceed. Do not substitute `Agent` subagents or take over a larger assignment without agreement.

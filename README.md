@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
 
 ### Worker model and effort
 
-In a terminal, the installer asks which model and effort Zeus's worker sessions use, separately for Claude and Codex; choose with the arrow keys and confirm with Enter. The previous choice is preselected. The choice is saved in `~/.zeus/config.json` and written into each installed SKILL; run the installer again to change it.
+In a terminal, the installer asks which model and effort the Coordinator's Worker sessions use, separately for Claude and Codex; choose with the arrow keys and confirm with Enter. The previous choice is preselected. The choice is saved in `~/.zeus/config.json` and written into each installed SKILL; run the installer again to change it.
 
 - **Codex** models and effort levels come from the local Codex runtime (`codex app-server`, `model/list`). The `codex` CLI does not have to be in `PATH`: the runtime bundled with the Codex desktop app is found in `/Applications`, `~/Applications`, or through Spotlight.
 - **Claude** models and effort levels come from the official Anthropic documentation. This lists what each model supports, not what your account can use; if a chosen model is unavailable, run the installer again and pick another one.

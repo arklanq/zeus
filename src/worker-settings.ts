@@ -69,7 +69,7 @@ export async function readZeusConfig(path: string): Promise<ZeusConfig | undefin
       settings.model === "" ||
       (settings.effort !== null && typeof settings.effort !== "string")
     ) {
-      throw new Error(`Cannot safely continue: ${path} has invalid ${agent} worker settings.`);
+      throw new Error(`Cannot safely continue: ${path} has invalid ${agent} Worker settings.`);
     }
     workers[agent] = { model: settings.model, effort: settings.effort };
   }
@@ -101,7 +101,7 @@ export function renderInstalledSkill(
   settings: WorkerSettings,
 ): string {
   if (!skill.includes(WORKER_SETTINGS_TOKEN)) {
-    throw new Error(`The ${agent} SKILL payload has no worker settings placeholder.`);
+    throw new Error(`The ${agent} SKILL payload has no Worker settings placeholder.`);
   }
   return skill.replaceAll(WORKER_SETTINGS_TOKEN, renderWorkerSettings(agent, settings));
 }
@@ -165,7 +165,7 @@ export async function chooseWorkerSettings(
 
   prompter.print(`${label} models: ${catalog.source}.`);
   const modelId = await prompter.select(
-    `${label} worker model`,
+    `${label} Worker model`,
     models.map((candidate) => ({
       value: candidate.id,
       label: candidate.displayName,
@@ -190,7 +190,7 @@ export async function chooseWorkerSettings(
     (model.defaultEffort && model.efforts.includes(model.defaultEffort) && model.defaultEffort) ||
     model.efforts[0]!;
   const effort = await prompter.select(
-    `${label} worker effort for ${model.displayName}`,
+    `${label} Worker effort for ${model.displayName}`,
     model.efforts.map((candidate) => ({
       value: candidate,
       label: candidate,
@@ -277,11 +277,11 @@ export async function resolveWorkerSettings(
         request.prompter,
       );
     } else if (saved) {
-      log(`Using the saved ${AGENT_LABELS[agent]} worker settings: ${describeWorkerSettings(saved)}.`);
+      log(`Using the saved ${AGENT_LABELS[agent]} Worker settings: ${describeWorkerSettings(saved)}.`);
       resolved[agent] = saved;
     } else {
       throw new Error(
-        `No ${AGENT_LABELS[agent]} worker model is configured. Run the installer in a terminal to choose one, or pass --${agent}-worker-model <id> [--${agent}-worker-effort <level>].`,
+        `No ${AGENT_LABELS[agent]} Worker model is configured. Run the installer in a terminal to choose one, or pass --${agent}-worker-model <id> [--${agent}-worker-effort <level>].`,
       );
     }
   }
