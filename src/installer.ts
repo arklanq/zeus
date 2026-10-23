@@ -1669,15 +1669,35 @@ export type Installation = {
   agent: AgentName;
   /** Missing for installations made before Zeus recorded its version. */
   zeusVersion?: string;
+  /** Whether Zeus installed the dashboard skill for this agent. */
+  dashboard: boolean;
 };
 
 /** Agents with a Zeus install manifest, which is what uninstall removes. */
 export async function installations(options: LocationOptions): Promise<Installation[]> {
   const result: Installation[] = [];
   for (const agent of ["claude", "codex"] as const) {
-    const manifest = await readManifest(agentPaths(options, agent).manifestPath);
+    const paths = agentPaths(options, agent);
+    const manifest = await readManifest(paths.manifestPath);
     if (manifest) {
-      result.push({ agent, zeusVersion: manifest.zeusVersion });
+      const dashboard = await readDashboardManifest(paths.dashboardDir);
+      result.push({
+        agent,
+        zeusVersion: manifest.zeusVersion,
+        dashboard: typeof dashboard === "object" && dashboard.files.length > 0,
+      });
+    }
+  }
+  return result;
+}
+
+/** Agents whose skills directory holds a `dashboard` skill that Zeus did not install. */
+export async function foreignDashboards(options: LocationOptions, agents: AgentName[]): Promise<string[]> {
+  const result: string[] = [];
+  for (const agent of agents) {
+    const { dashboardDir } = agentPaths(options, agent);
+    if ((await readDashboardManifest(dashboardDir)) === "foreign") {
+      result.push(dashboardDir);
     }
   }
   return result;

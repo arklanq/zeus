@@ -997,11 +997,11 @@ describe("Zeus installer", () => {
       workerSettings,
     };
     await runInstaller({ ...common, agents: ["claude"], zeusVersion: "v1.0.0" });
-    await runInstaller({ ...common, agents: ["codex"] });
+    await runInstaller({ ...common, agents: ["codex"], dashboard: false });
 
     expect(await installations(common)).toEqual([
-      { agent: "claude", zeusVersion: "v1.0.0" },
-      { agent: "codex", zeusVersion: undefined },
+      { agent: "claude", zeusVersion: "v1.0.0", dashboard: true },
+      { agent: "codex", zeusVersion: undefined, dashboard: false },
     ]);
   });
 });

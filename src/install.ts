@@ -19,6 +19,7 @@ import { runHook } from "./hook.ts";
 import {
   applyInstallerPlan,
   describeOperation,
+  foreignDashboards,
   installations,
   installedAgents,
   planInstaller,
@@ -381,13 +382,20 @@ async function install(): Promise<void> {
     catalogSource,
     log: console.log,
   });
+  // Asking first avoids failing only after every answer when the user has their own dashboard skill.
+  const foreign = dashboardFlag === undefined && interactive ? await foreignDashboards(locations, agents) : [];
+  if (foreign.length > 0) {
+    log.warn(
+      `${foreign.join(" and ")} already holds a dashboard skill that Zeus did not install. Move it away before choosing the bundled one.`,
+    );
+  }
   const dashboard =
     dashboardFlag ??
     (interactive
       ? exitIfCancelled(
           await confirm({
             message: "Install the dashboard skill and start the live dashboard in Zeus sessions?",
-            initialValue: saved?.dashboard ?? true,
+            initialValue: foreign.length === 0 && (saved?.dashboard ?? true),
           }),
         )
       : (saved?.dashboard ?? true));
@@ -475,8 +483,7 @@ async function status(): Promise<void> {
     console.log("Zeus is not installed.");
     return;
   }
-  const config = await readZeusConfig(zeusConfigPath(homeDir!));
-  const workers = config?.workers ?? {};
+  const workers = (await readZeusConfig(zeusConfigPath(homeDir!)))?.workers ?? {};
   // Agents installed by different releases list their own version.
   const versions = new Set(installed.map(({ zeusVersion }) => zeusVersion));
   const shared = versions.size === 1;
@@ -485,12 +492,13 @@ async function status(): Promise<void> {
       ? `Zeus ${describeVersion(installed[0]!.zeusVersion)} is installed for:`
       : "Zeus is installed for:",
   );
-  for (const { agent, zeusVersion } of installed) {
+  for (const { agent, zeusVersion, dashboard } of installed) {
     const settings = workers[agent];
     const version = shared ? "" : ` (${versionLabel(zeusVersion)})`;
-    console.log(`- ${AGENT_NAMES[agent]}${version}, Worker: ${settings ? describeWorkerSettings(settings) : "not set"}`);
+    console.log(
+      `- ${AGENT_NAMES[agent]}${version}, Worker: ${settings ? describeWorkerSettings(settings) : "not set"}, dashboard: ${dashboard ? "on" : "off"}`,
+    );
   }
-  console.log(`Dashboard: ${config?.dashboard === false ? "off" : "on"}`);
 }
 
 try {
