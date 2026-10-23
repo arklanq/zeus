@@ -40,6 +40,10 @@ curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
   --codex-worker-model gpt-6-sol --codex-worker-effort high
 ```
 
+### Live dashboard
+
+The installer also asks whether to add the bundled `dashboard` skill (`skills/dashboard`, default: yes). It is an independent skill: run `/dashboard` in any session to follow the work in a live visual dashboard, which a subagent starts and keeps current from the main agent's signals. It needs Node.js 18+. When it is installed, the Zeus Coordinator starts it at `/zeus` and signals every workstream change to it. The installer never overwrites a `dashboard` skill it did not install; move it away or choose no dashboard. Turning the dashboard off or uninstalling removes only the files Zeus installed. The choice is saved in `~/.zeus/config.json`; pass `--dashboard` or `--no-dashboard` to skip the question.
+
 Check what is installed, or remove only files and configuration entries owned by Zeus:
 
 ```bash
@@ -58,6 +62,8 @@ bun install
 bun run check
 bun run build:binary
 ```
+
+`skills/dashboard` is the source of the bundled dashboard skill; `bun run build` refreshes its installed file list, and `bun run test:dashboard` runs its runtime tests.
 
 `bun run catalog:update` refreshes the bundled model catalog (`src/model-catalog.bundled.json`) from the Anthropic documentation and the local Codex runtime; run it before a release.
 

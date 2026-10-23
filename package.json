@@ -10,9 +10,10 @@
     "build:check": "bun run src/build.ts --check",
     "build:binary": "bun run build && bun run src/build-release.ts --host",
     "release:build": "bun run build && bun run src/build-release.ts",
-    "test": "bun test",
+    "test": "bun test ./tests",
+    "test:dashboard": "node --test skills/dashboard/tests/runtime.test.mjs",
     "typecheck": "tsc --noEmit",
-    "check": "bun run typecheck && bun run build:check && bun run test && bash -n install.sh",
+    "check": "bun run typecheck && bun run build:check && bun run test && bun run test:dashboard && bash -n install.sh",
     "catalog:update": "bun run src/update-catalog.ts",
     "zeus:install": "bun run build:binary && ./release/zeus install",
     "zeus:uninstall": "${ZEUS_BIN_DIR:-$HOME/.local/bin}/zeus uninstall"

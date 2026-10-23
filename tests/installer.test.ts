@@ -610,20 +610,105 @@ describe("Zeus installer", () => {
     expect(codexSkill).toContain('`model: "gpt-6-sol"` and `thinking: "xhigh"`');
     expect(claudeSkill).not.toContain("<zeus:worker-settings>");
     expect(codexSkill).not.toContain("<zeus:worker-settings>");
-    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ version: 1, workers: workerSettings });
+    expect(claudeSkill).toContain("## Live dashboard");
+    expect(claudeSkill).not.toContain("zeus:dashboard>");
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      workers: workerSettings,
+      dashboard: true,
+    });
 
     const codexOnly = { codex: { model: "gpt-6-luna", effort: "low" } };
-    await runInstaller({ ...common, action: "install", agents: ["codex"], workerSettings: codexOnly });
+    await runInstaller({
+      ...common,
+      action: "install",
+      agents: ["codex"],
+      workerSettings: codexOnly,
+      dashboard: false,
+    });
+    const codexWithoutDashboard = await readFile(join(homeDir, ".codex", "skills", "zeus", "SKILL.md"), "utf8");
+    expect(codexWithoutDashboard).not.toContain("dashboard");
+    expect(codexWithoutDashboard).toContain("Then immediately set your own thread title");
+    expect(codexWithoutDashboard).toMatch(/marker exactly once and never change its value\.\n\n## Roles and Worker sessions\n/);
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 1,
       workers: { claude: workerSettings.claude, ...codexOnly },
+      dashboard: false,
     });
 
     await runInstaller({ ...common, action: "uninstall", agents: ["claude"] });
-    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({ version: 1, workers: codexOnly });
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
+      version: 1,
+      workers: codexOnly,
+      dashboard: false,
+    });
 
     await runInstaller({ ...common, action: "uninstall", agents: ["codex"] });
     expect(await stat(configPath).then(() => true, () => false)).toBe(false);
+  });
+
+  test("installs the bundled dashboard skill and removes only its own files", async () => {
+    const homeDir = await temporaryHome();
+    const dashboardDir = join(homeDir, ".claude", "skills", "dashboard");
+    const common = {
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      agents: ["claude" as const],
+      workerSettings,
+    };
+    const files = JSON.parse(await readFile(join(projectDir, "dist", "dashboard-files.json"), "utf8")) as string[];
+    expect(files).toContain("scripts/dashboard.mjs");
+    expect(files.some((file) => file.startsWith("tests/"))).toBe(false);
+
+    await runInstaller({ ...common, action: "install" });
+    for (const file of files) {
+      expect(await readFile(join(dashboardDir, file))).toEqual(
+        await readFile(join(projectDir, "skills", "dashboard", file)),
+      );
+    }
+    // A component the dashboard skill added at runtime survives turning the dashboard off.
+    await writeFile(join(dashboardDir, "components", "custom.js"), "export {};\n");
+    await runInstaller({ ...common, action: "install", dashboard: false });
+    expect(await readFile(join(dashboardDir, "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await stat(join(dashboardDir, "SKILL.md")).then(() => true, () => false)).toBe(false);
+    expect(await stat(join(dashboardDir, "scripts")).then(() => true, () => false)).toBe(false);
+
+    await runInstaller({ ...common, action: "install" });
+    expect(await stat(join(dashboardDir, "SKILL.md")).then(() => true, () => false)).toBe(true);
+    await rm(join(dashboardDir, "components", "custom.js"));
+    await runInstaller({ ...common, action: "uninstall" });
+    expect(await stat(dashboardDir).then(() => true, () => false)).toBe(false);
+  });
+
+  test("refuses to replace a dashboard skill Zeus did not install", async () => {
+    const homeDir = await temporaryHome();
+    const ownSkill = join(homeDir, "own-dashboard");
+    await mkdir(ownSkill, { recursive: true });
+    await writeFile(join(ownSkill, "SKILL.md"), "own\n");
+    await mkdir(join(homeDir, ".claude", "skills"), { recursive: true });
+    await symlink(ownSkill, join(homeDir, ".claude", "skills", "dashboard"));
+    const options = {
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      agents: ["claude" as const],
+      workerSettings,
+    };
+
+    await expect(runInstaller({ ...options, action: "install" })).rejects.toThrow(
+      "was not installed by Zeus",
+    );
+    await runInstaller({ ...options, action: "install", dashboard: false });
+    await runInstaller({ ...options, action: "uninstall" });
+    expect(await readFile(join(ownSkill, "SKILL.md"), "utf8")).toBe("own\n");
+    expect((await lstat(join(homeDir, ".claude", "skills", "dashboard"))).isSymbolicLink()).toBe(true);
   });
 
   test("requires worker settings for every installed agent", async () => {
@@ -912,11 +997,11 @@ describe("Zeus installer", () => {
       workerSettings,
     };
     await runInstaller({ ...common, agents: ["claude"], zeusVersion: "v1.0.0" });
-    await runInstaller({ ...common, agents: ["codex"] });
+    await runInstaller({ ...common, agents: ["codex"], dashboard: false });
 
     expect(await installations(common)).toEqual([
-      { agent: "claude", zeusVersion: "v1.0.0" },
-      { agent: "codex", zeusVersion: undefined },
+      { agent: "claude", zeusVersion: "v1.0.0", dashboard: true },
+      { agent: "codex", zeusVersion: undefined, dashboard: false },
     ]);
   });
 });

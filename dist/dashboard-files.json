@@ -1,0 +1,18 @@
+[
+  "SKILL.md",
+  "agents/openai.yaml",
+  "assets/dashboard.html",
+  "assets/example.json",
+  "assets/font.css",
+  "components/CATALOG.md",
+  "components/evidence.js",
+  "components/roadmap.js",
+  "components/work.js",
+  "references/dashboard-agent.md",
+  "references/library.md",
+  "references/protocol.md",
+  "references/visual-direction.md",
+  "scripts/dashboard.mjs",
+  "scripts/library.mjs",
+  "scripts/preview.mjs"
+]

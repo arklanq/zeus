@@ -7,7 +7,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 type TargetConfig = Record<string, string>;
@@ -27,7 +27,10 @@ const optionalBlocks = new Set([
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDir = join(projectDir, "src");
+const dashboardDir = join(projectDir, "skills", "dashboard");
 const outputDir = join(projectDir, "dist");
+// Development-only files of the dashboard skill that are not installed.
+const dashboardExcludes = ["tests/"];
 
 if (outputDir === projectDir || !outputDir.endsWith("/dist")) {
   throw new Error(`Refusing to use unsafe output directory: ${outputDir}`);
@@ -105,6 +108,14 @@ async function createOutputs(): Promise<Map<string, string>> {
 
     outputs.set(join(targetName, "SKILL.md"), renderTemplate(skillTemplate, values));
   }
+
+  // The installer copies these files from skills/dashboard; the compiled executable cannot list embedded directories.
+  const dashboardFiles = (await listFiles(dashboardDir))
+    .map((path) => relative(dashboardDir, path))
+    .filter((path) => !dashboardExcludes.some((prefix) => path.startsWith(prefix)))
+    .filter((path) => basename(path) !== ".DS_Store")
+    .sort();
+  outputs.set("dashboard-files.json", `${JSON.stringify(dashboardFiles, null, 2)}\n`);
 
   return outputs;
 }
