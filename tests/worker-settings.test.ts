@@ -75,7 +75,7 @@ describe("worker settings", () => {
       "does not support effort",
     );
     expect(() => renderInstalledSkill("no token", "codex", { model: "m", effort: null })).toThrow(
-      "no worker settings placeholder",
+      "no Worker settings placeholder",
     );
   });
 
@@ -189,7 +189,7 @@ describe("worker settings", () => {
       log: () => {},
     };
     await expect(resolveWorkerSettings({ ...request, flags: {} })).rejects.toThrow(
-      "No Codex worker model is configured",
+      "No Codex Worker model is configured",
     );
     await expect(
       resolveWorkerSettings({ ...request, flags: { codex: { effort: "low" } } }),
