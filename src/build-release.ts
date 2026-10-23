@@ -46,7 +46,7 @@ for (const releaseTarget of targets) {
     compile: {
       ...(releaseTarget.target ? { target: releaseTarget.target } : {}),
       outfile,
-      assets: ["./dist"],
+      assets: ["./dist", "./skills"],
       autoloadBunfig: false,
       autoloadDotenv: false,
       autoloadPackageJson: false,

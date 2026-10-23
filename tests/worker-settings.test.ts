@@ -4,6 +4,7 @@ import type { WorkerModelCatalog } from "../src/model-catalog.ts";
 import {
   chooseWorkerSettings,
   loadWorkerCatalog,
+  renderDashboardSection,
   renderInstalledSkill,
   resolveWorkerSettings,
   settingsFromCatalog,
@@ -77,6 +78,13 @@ describe("worker settings", () => {
     expect(() => renderInstalledSkill("no token", "codex", { model: "m", effort: null })).toThrow(
       "no Worker settings placeholder",
     );
+  });
+
+  test("keeps or removes the dashboard section", () => {
+    const skill = "intro\n\n<zeus:dashboard>\n## Dashboard\n\nStart it.\n</zeus:dashboard>\n\n## Next\n";
+    expect(renderDashboardSection(skill, true)).toBe("intro\n\n## Dashboard\n\nStart it.\n\n## Next\n");
+    expect(renderDashboardSection(skill, false)).toBe("intro\n\n## Next\n");
+    expect(() => renderDashboardSection("intro\n", true)).toThrow("no dashboard section");
   });
 
   test("validates explicit settings against the catalog", () => {

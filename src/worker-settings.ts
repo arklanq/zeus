@@ -19,9 +19,12 @@ export type WorkerSettingsByAgent = Partial<Record<AgentName, WorkerSettings>>;
 export type ZeusConfig = {
   version: 1;
   workers: WorkerSettingsByAgent;
+  /** Whether the Coordinator starts the live dashboard; missing means it was never chosen. */
+  dashboard?: boolean;
 };
 
 export const WORKER_SETTINGS_TOKEN = "<zeus:worker-settings>";
+const DASHBOARD_SECTION = /^<zeus:dashboard>\n([\s\S]*?)^<\/zeus:dashboard>\n(?:\n)?/m;
 
 const AGENT_LABELS: Record<AgentName, string> = {
   claude: "Claude",
@@ -53,7 +56,12 @@ export async function readZeusConfig(path: string): Promise<ZeusConfig | undefin
   } catch {
     throw new Error(`Cannot safely continue: ${path} is not valid JSON.`);
   }
-  if (!isObject(value) || value.version !== 1 || !isObject(value.workers)) {
+  if (
+    !isObject(value) ||
+    value.version !== 1 ||
+    !isObject(value.workers) ||
+    (value.dashboard !== undefined && typeof value.dashboard !== "boolean")
+  ) {
     throw new Error(`Cannot safely continue: ${path} is not a Zeus configuration file.`);
   }
 
@@ -73,7 +81,7 @@ export async function readZeusConfig(path: string): Promise<ZeusConfig | undefin
     }
     workers[agent] = { model: settings.model, effort: settings.effort };
   }
-  return { version: 1, workers };
+  return value.dashboard === undefined ? { version: 1, workers } : { version: 1, workers, dashboard: value.dashboard };
 }
 
 export function serializeZeusConfig(config: ZeusConfig): string {
@@ -104,6 +112,14 @@ export function renderInstalledSkill(
     throw new Error(`The ${agent} SKILL payload has no Worker settings placeholder.`);
   }
   return skill.replaceAll(WORKER_SETTINGS_TOKEN, renderWorkerSettings(agent, settings));
+}
+
+/** Keeps the dashboard section without its markers, or removes it entirely. */
+export function renderDashboardSection(skill: string, enabled: boolean): string {
+  if (!DASHBOARD_SECTION.test(skill)) {
+    throw new Error("The SKILL payload has no dashboard section.");
+  }
+  return skill.replace(DASHBOARD_SECTION, (_match, section: string) => (enabled ? `${section}\n` : ""));
 }
 
 export function settingsFromCatalog(

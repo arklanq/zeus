@@ -12,5 +12,7 @@
   "subagentKind": "`Agent`",
   "workerIdColumn": "Session ID",
   "delegationCoordination": "Divide responsibilities so Workers do not overwrite one another's work; give each Worker that edits files its own worktree through `use_worktree: true`. Run independent chunks in parallel when useful.",
-  "delegationPublication": "After creating a session, give the user its link as `[title](#local_<id>)`. Distinguish session creation, work beginning, and work completion."
+  "delegationPublication": "After creating a session, give the user its link as `[title](#local_<id>)`. Distinguish session creation, work beginning, and work completion.",
+  "dashboardSubagent": "a background `Agent` subagent (`run_in_background: true`)",
+  "dashboardMessage": "`SendMessage` to the agent's ID"
 }
