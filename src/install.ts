@@ -355,8 +355,9 @@ async function install(): Promise<void> {
   }
   const agents = await chooseAgents();
   for (const agent of ["claude", "codex"] as const) {
-    if (workerFlags[agent].effort && !agents.includes(agent)) {
-      throw new Error(`--${agent}-worker-effort was given, but ${AGENT_NAMES[agent]} is not selected.`);
+    const { model, effort } = workerFlags[agent];
+    if ((model || effort) && !agents.includes(agent)) {
+      throw new Error(`--${agent}-worker-* options were given, but ${AGENT_NAMES[agent]} is not selected.`);
     }
   }
 
