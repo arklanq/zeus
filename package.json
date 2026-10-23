@@ -2,7 +2,9 @@
   "name": "zeus",
   "private": true,
   "type": "module",
-  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": "1.4.x"
+  },
   "scripts": {
     "build": "bun run src/build.ts",
     "build:check": "bun run src/build.ts --check",
