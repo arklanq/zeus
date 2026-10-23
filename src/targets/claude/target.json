@@ -1,5 +1,6 @@
 {
   "sessionNoun": "session",
+  "workerTitlePrefix": "",
   "createTool": "start_session",
   "startupArguments": "Invocation argument: `$ARGUMENTS`",
   "withArgument": "**Argument provided** — use it as",

@@ -79,7 +79,7 @@ The Coordinator marks a workstream as `completed` only after its criteria are me
 ## Agent names and communication
 
 - The Coordinator's title, `@ ZEUS {zeus-id}: {action summary}`, describes the workstream the Coordinator is currently handling and is updated whenever the Coordinator switches workstreams.
-- A Worker uses the title `└─ {Name}: {action summary}`, for example `└─ Jake: Analyze logs`.
+- A Worker uses the title `{Name}: {action summary}`, for example `Jake: Analyze logs`.
 - Every agent updates `{action summary}` through `set_session_title("self")` after a material scope change while retaining its prefix, role, and name.
 - The Coordinator assigns the Worker's initial title and requires the Worker to update its own title later.
 

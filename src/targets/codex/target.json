@@ -1,5 +1,6 @@
 {
   "sessionNoun": "thread",
+  "workerTitlePrefix": "└─ ",
   "createTool": "create_thread",
   "startupArguments": "",
   "withArgument": "**Invocation with an argument** (`/zeus <zeus-id>`) — use the provided argument as",
