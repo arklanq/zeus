@@ -12,9 +12,11 @@ curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
 
 The shell installer detects the operating system and CPU architecture, downloads the matching standalone executable from GitHub Releases, verifies its SHA-256 checksum, and runs it.
 
-The executable is installed to `~/.local/bin/zeus`. It installs the appropriate SKILL for each agent, merges the hook configuration idempotently into `~/.claude/settings.json` and `~/.codex/hooks.json`, and enables and trusts the exact Codex hook definition in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set.
+In a terminal, the installer shows which agents it detected (CLI, desktop app or configuration directory) and asks which of them to configure; on a later run, the agents Zeus is already installed for are preselected. It then asks for the Worker settings, lists the changes and applies them after confirmation. Without a terminal, or with `--yes`, it configures every detected agent without asking.
 
-Pin a release or limit the installation when needed:
+The executable is installed to `~/.local/bin/zeus`; the installer says how to add that directory to `PATH` when it is missing there. For each chosen agent, it installs the appropriate SKILL, merges the hook configuration idempotently into `~/.claude/settings.json` or `~/.codex/hooks.json`, and enables and trusts the exact Codex hook definition in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set.
+
+Pin a release, limit the installation, or preview the changes as diffs of the edited files:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash -s -- --version v1.0.0
@@ -30,7 +32,7 @@ In a terminal, the installer asks which model and effort the Coordinator's Worke
 - **Claude** models and effort levels come from the official Anthropic documentation. This lists what each model supports, not what your account can use; if a chosen model is unavailable, run the installer again and pick another one.
 - If a live catalog cannot be loaded, the installer says why and uses the catalog bundled with Zeus, showing its capture date.
 
-Without a terminal, the installer reuses the saved choice and fails when there is none. Pass the choice explicitly to skip the wizard; the effort defaults to the model default:
+Without a terminal or with `--yes`, the installer reuses the saved choice and fails when there is none. Pass the choice explicitly to skip the wizard; the effort defaults to the model default. A Worker model flag also configures its agent when that agent was not detected:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash -s -- \
@@ -38,10 +40,11 @@ curl -fsSL https://raw.githubusercontent.com/arklanq/zeus/main/install.sh | bash
   --codex-worker-model gpt-6-sol --codex-worker-effort high
 ```
 
-Remove only files and configuration entries owned by Zeus:
+Check what is installed, or remove only files and configuration entries owned by Zeus:
 
 ```bash
-~/.local/bin/zeus uninstall
+zeus status
+zeus uninstall    # Asks for confirmation; --skip-claude or --skip-codex keeps one agent.
 ```
 
 Codex may require approving a newly installed hook in `/hooks` before it runs.

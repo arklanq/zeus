@@ -14,7 +14,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "jsonc-parser";
-import { runInstaller } from "../src/installer.ts";
+import {
+  describeOperation,
+  installations,
+  installedAgents,
+  planInstaller,
+  runInstaller,
+} from "../src/installer.ts";
 
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const workerSettings = {
@@ -852,5 +858,65 @@ describe("Zeus installer", () => {
     expect(keys).toEqual([`${codexHome}/hooks.json:session_start:0:0`]);
     expect(keys[0]).not.toContain(codexTarget);
     expect((await lstat(codexHome)).isSymbolicLink()).toBe(true);
+  });
+
+  test("plans only the steps that change something", async () => {
+    const homeDir = await temporaryHome();
+    const settingsPath = join(homeDir, ".claude", "settings.json");
+    await mkdir(dirname(settingsPath), { recursive: true });
+    await writeFile(settingsPath, '{\n  "theme": "dark"\n}\n');
+    const options = {
+      action: "install" as const,
+      agents: ["claude" as const],
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      workerSettings,
+    };
+
+    const first = await planInstaller(options);
+    const settingsStep = first.operations.find(({ path }) => path === settingsPath)!;
+    expect(describeOperation(settingsStep, true)).toContain('-   "theme": "dark"\n    +   "theme": "dark",');
+    const skillStep = first.operations.find(({ path }) => path.endsWith("SKILL.md"))!;
+    expect(describeOperation(skillStep, true)).toBe(`Install claude SKILL\n    create ${skillStep.path}`);
+    expect(await installedAgents(options)).toEqual([]);
+
+    await runInstaller({ ...options, dryRun: false, log: () => {} });
+    expect(await installedAgents(options)).toEqual(["claude"]);
+    expect((await planInstaller(options)).operations).toEqual([]);
+  });
+
+  test("uninstall plans nothing when Zeus is not installed", async () => {
+    const homeDir = await temporaryHome();
+    const plan = await planInstaller({
+      action: "uninstall",
+      agents: [],
+      homeDir,
+      packageDir: projectDir,
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+    });
+    expect(plan.operations).toEqual([]);
+  });
+
+  test("records the Zeus version of each installed agent", async () => {
+    const homeDir = await temporaryHome();
+    const common = {
+      action: "install" as const,
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      workerSettings,
+    };
+    await runInstaller({ ...common, agents: ["claude"], zeusVersion: "v1.0.0" });
+    await runInstaller({ ...common, agents: ["codex"] });
+
+    expect(await installations(common)).toEqual([
+      { agent: "claude", zeusVersion: "v1.0.0" },
+      { agent: "codex", zeusVersion: undefined },
+    ]);
   });
 });

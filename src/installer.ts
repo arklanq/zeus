@@ -34,6 +34,7 @@ import {
   type WorkerSettings,
   type WorkerSettingsByAgent,
 } from "./worker-settings.ts";
+import { redactSecrets, renderDiff } from "./diff.ts";
 
 export type AgentName = "claude" | "codex";
 
@@ -57,28 +58,31 @@ type InstallManifest = {
   version: 1 | 2;
   agent: AgentName;
   hooksFileExisted: boolean;
+  zeusVersion?: string;
   codexFeature?: CodexFeatureState;
   codexHookTrust?: CodexHookTrustState;
 };
 
-type WriteOperation = {
+export type WriteOperation = {
   kind: "write";
   path: string;
   content: string | Uint8Array;
+  /** The current file content, shown as the base of the dry-run diff. */
+  previous?: string;
   mode?: number;
   preserveSymlink?: boolean;
   description: string;
 };
 
-type DeleteOperation = {
+export type DeleteOperation = {
   kind: "delete";
   path: string;
   description: string;
 };
 
-type Operation = WriteOperation | DeleteOperation;
+export type Operation = WriteOperation | DeleteOperation;
 
-type InstallerOptions = {
+export type InstallerOptions = {
   action: "install" | "uninstall";
   agents: AgentName[];
   dryRun: boolean;
@@ -89,6 +93,8 @@ type InstallerOptions = {
   claudeConfigDir?: string;
   codexHome?: string;
   workerSettings?: WorkerSettingsByAgent;
+  /** Recorded in each install manifest so status can report what is installed. */
+  zeusVersion?: string;
   log?: (message: string) => void;
 };
 
@@ -1005,6 +1011,9 @@ async function readManifest(path: string): Promise<InstallManifest | undefined> 
   ) {
     throw new Error(`Cannot safely continue: ${path} is not a Zeus install manifest.`);
   }
+  if (value.zeusVersion !== undefined && typeof value.zeusVersion !== "string") {
+    throw new Error(`Cannot safely continue: ${path} has an invalid Zeus version.`);
+  }
 
   if (value.codexFeature !== undefined) {
     const feature = value.codexFeature;
@@ -1036,7 +1045,19 @@ async function readManifest(path: string): Promise<InstallManifest | undefined> 
   return value as InstallManifest;
 }
 
-function agentPaths(options: InstallerOptions, agent: AgentName): AgentPaths {
+type LocationOptions = Pick<
+  InstallerOptions,
+  "homeDir" | "binaryInstallDir" | "claudeConfigDir" | "codexHome"
+> & { packageDir?: string };
+
+function binaryPath(options: LocationOptions): string {
+  return join(
+    resolve(options.binaryInstallDir ?? join(options.homeDir, ".local", "bin")),
+    BINARY_FILENAME,
+  );
+}
+
+function agentPaths(options: LocationOptions, agent: AgentName): AgentPaths {
   const rootDir = resolve(
     agent === "claude"
       ? options.claudeConfigDir ?? join(options.homeDir, ".claude")
@@ -1049,11 +1070,8 @@ function agentPaths(options: InstallerOptions, agent: AgentName): AgentPaths {
 
   return {
     agent,
-    skillSourcePath: join(options.packageDir, "dist", agent, SKILL_FILENAME),
-    binaryPath: join(
-      resolve(options.binaryInstallDir ?? join(options.homeDir, ".local", "bin")),
-      BINARY_FILENAME,
-    ),
+    skillSourcePath: join(options.packageDir ?? "", "dist", agent, SKILL_FILENAME),
+    binaryPath: binaryPath(options),
     skillDir,
     skillPath: join(skillDir, SKILL_FILENAME),
     manifestPath: join(skillDir, MANIFEST_FILENAME),
@@ -1069,6 +1087,7 @@ function agentPaths(options: InstallerOptions, agent: AgentName): AgentPaths {
 async function prepareInstall(
   paths: AgentPaths,
   workerSettings: WorkerSettings,
+  zeusVersion: string | undefined,
 ): Promise<Operation[]> {
   const skillSource = renderInstalledSkill(
     await readFile(paths.skillSourcePath, "utf8"),
@@ -1134,6 +1153,7 @@ async function prepareInstall(
     version: 2,
     agent: paths.agent,
     hooksFileExisted: existingManifest?.hooksFileExisted ?? hooksConfig.exists,
+    ...(zeusVersion ? { zeusVersion } : {}),
     ...(codexFeature ? { codexFeature } : {}),
     ...(codexHookTrust ? { codexHookTrust } : {}),
   };
@@ -1300,17 +1320,8 @@ async function atomicWrite(
   }
 }
 
-async function executeOperations(
-  operations: Operation[],
-  dryRun: boolean,
-  log: (message: string) => void,
-): Promise<void> {
+async function executeOperations(operations: Operation[]): Promise<void> {
   for (const operation of operations) {
-    log(`${dryRun ? "Would apply" : "Apply"} ${operation.description}: ${operation.path}`);
-    if (dryRun) {
-      continue;
-    }
-
     if (operation.kind === "write") {
       await atomicWrite(
         operation.path,
@@ -1323,11 +1334,10 @@ async function executeOperations(
     }
   }
 }
-
-async function removeEmptySkillDirectories(paths: AgentPaths[]): Promise<void> {
-  for (const pathsForAgent of paths) {
+async function removeEmptySkillDirectories(skillDirs: string[]): Promise<void> {
+  for (const skillDir of skillDirs) {
     try {
-      await rmdir(pathsForAgent.skillDir);
+      await rmdir(skillDir);
     } catch (error) {
       const code = (error as NodeJS.ErrnoException).code;
       if (code !== "ENOENT" && code !== "ENOTEMPTY") {
@@ -1337,7 +1347,9 @@ async function removeEmptySkillDirectories(paths: AgentPaths[]): Promise<void> {
   }
 }
 
-async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]> {
+async function prepareZeusConfig(
+  options: Omit<InstallerOptions, "dryRun" | "log">,
+): Promise<Operation[]> {
   const path = zeusConfigPath(options.homeDir);
   const existing = await readZeusConfig(path);
   const workers: WorkerSettingsByAgent = { ...existing?.workers };
@@ -1382,13 +1394,61 @@ async function prepareZeusConfig(options: InstallerOptions): Promise<Operation[]
   ];
 }
 
-export async function runInstaller(options: InstallerOptions): Promise<void> {
-  if (options.agents.length === 0) {
+export type InstallerPlan = {
+  action: InstallerOptions["action"];
+  agents: AgentName[];
+  operations: Operation[];
+  skillDirs: string[];
+};
+
+/** Fills in the current content of written files and drops steps that would change nothing. */
+async function withoutNoOps(operations: Operation[]): Promise<Operation[]> {
+  const result: Operation[] = [];
+  for (const operation of operations) {
+    if (operation.kind === "delete") {
+      if ((await readOptional(operation.path)).exists) {
+        result.push(operation);
+      }
+    } else if (typeof operation.content === "string") {
+      const current = await readOptional(operation.path);
+      const previous = operation.previous ?? (current.exists ? current.content : "");
+      if (!current.exists || current.content !== operation.content) {
+        result.push({ ...operation, previous });
+      }
+    } else {
+      const current = await readFile(operation.path).catch(() => undefined);
+      if (!current || !Buffer.from(operation.content).equals(current)) {
+        result.push(operation);
+      }
+    }
+  }
+  return result;
+}
+
+/** Computes every change without writing anything, so it can be shown before it is applied. */
+export async function planInstaller(
+  options: Omit<InstallerOptions, "dryRun" | "log">,
+): Promise<InstallerPlan> {
+  if (options.action === "install" && options.agents.length === 0) {
     throw new Error("At least one agent must be selected.");
   }
 
-  const log = options.log ?? console.log;
   const paths = options.agents.map((agent) => agentPaths(options, agent));
+  const operations: Operation[] = [];
+
+  if (options.action === "install") {
+    if (!options.binarySourcePath) {
+      throw new Error("The Zeus executable source path is required for installation.");
+    }
+    operations.push({
+      kind: "write",
+      path: binaryPath(options),
+      content: await readFile(options.binarySourcePath),
+      mode: 0o755,
+      description: "Install Zeus executable",
+    });
+  }
+
   const plans = await Promise.all(
     paths.map((agent) => {
       if (options.action === "uninstall") {
@@ -1398,65 +1458,85 @@ export async function runInstaller(options: InstallerOptions): Promise<void> {
       if (!workerSettings) {
         throw new Error(`Worker settings for ${agent.agent} are required for installation.`);
       }
-      return prepareInstall(agent, workerSettings);
+      return prepareInstall(agent, workerSettings, options.zeusVersion);
     }),
   );
-  plans.push(await prepareZeusConfig(options));
-
-  if (options.action === "install") {
-    if (!options.binarySourcePath) {
-      throw new Error("The Zeus executable source path is required for installation.");
-    }
-    const binary = await readFile(options.binarySourcePath);
-    await executeOperations(
-      [
-        {
-          kind: "write",
-          path: paths[0]!.binaryPath,
-          content: binary,
-          mode: 0o755,
-          description: "Install Zeus executable",
-        },
-      ],
-      options.dryRun,
-      log,
-    );
-  }
-
-  for (const operations of plans) {
-    await executeOperations(operations, options.dryRun, log);
-  }
-
-  if (options.action === "uninstall" && !options.dryRun) {
-    await removeEmptySkillDirectories(paths);
-  }
+  operations.push(...plans.flat(), ...(await prepareZeusConfig(options)));
 
   if (options.action === "uninstall") {
-    const unselectedAgents = (["claude", "codex"] as const).filter(
-      (agent) => !options.agents.includes(agent),
-    );
-    const hasAnotherInstallation = (
-      await Promise.all(
-        unselectedAgents.map(async (agent) => {
-          const otherPaths = agentPaths(options, agent);
-          return (await readOptional(otherPaths.manifestPath)).exists;
-        }),
-      )
-    ).some(Boolean);
-
-    if (!hasAnotherInstallation) {
-      await executeOperations(
-        [
-          {
-            kind: "delete",
-            path: paths[0]!.binaryPath,
-            description: "Remove Zeus executable",
-          },
-        ],
-        options.dryRun,
-        log,
-      );
+    const remaining = await installedAgents(options);
+    if (remaining.every((agent) => options.agents.includes(agent))) {
+      operations.push({
+        kind: "delete",
+        path: binaryPath(options),
+        description: "Remove Zeus executable",
+      });
     }
+  }
+
+  return {
+    action: options.action,
+    agents: options.agents,
+    operations: await withoutNoOps(operations),
+    skillDirs: paths.map(({ skillDir }) => skillDir),
+  };
+}
+
+export async function applyInstallerPlan(plan: InstallerPlan): Promise<void> {
+  await executeOperations(plan.operations);
+  if (plan.action === "uninstall") {
+    await removeEmptySkillDirectories(plan.skillDirs);
+  }
+}
+
+export type Installation = {
+  agent: AgentName;
+  /** Missing for installations made before Zeus recorded its version. */
+  zeusVersion?: string;
+};
+
+/** Agents with a Zeus install manifest, which is what uninstall removes. */
+export async function installations(options: LocationOptions): Promise<Installation[]> {
+  const result: Installation[] = [];
+  for (const agent of ["claude", "codex"] as const) {
+    const manifest = await readManifest(agentPaths(options, agent).manifestPath);
+    if (manifest) {
+      result.push({ agent, zeusVersion: manifest.zeusVersion });
+    }
+  }
+  return result;
+}
+
+export async function installedAgents(options: LocationOptions): Promise<AgentName[]> {
+  return (await installations(options)).map(({ agent }) => agent);
+}
+
+export function describeOperation(operation: Operation, withDiff: boolean): string {
+  if (operation.kind === "delete") {
+    return `${operation.description}\n    delete ${operation.path}`;
+  }
+  if (!operation.previous) {
+    return `${operation.description}\n    create ${operation.path}`;
+  }
+  const header = `${operation.description}\n    write ${operation.path}`;
+  if (!withDiff || typeof operation.content !== "string") {
+    return header;
+  }
+  const diff = renderDiff(redactSecrets(operation.previous ?? ""), redactSecrets(operation.content))
+    .split("\n")
+    .map((line) => `    ${line}`)
+    .join("\n");
+  return `${header}\n${diff}`;
+}
+
+export async function runInstaller(options: InstallerOptions): Promise<void> {
+  const log = options.log ?? console.log;
+  const plan = await planInstaller(options);
+  for (const operation of plan.operations) {
+    log(`${options.dryRun ? "Would apply" : "Apply"} ${operation.description}: ${operation.path}`);
+  }
+  if (!options.dryRun) {
+    await applyInstallerPlan(plan);
   }
 
   log(

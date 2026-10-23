@@ -25,6 +25,8 @@ jobs:
         run: bun run check
 
       - name: Build standalone executables
+        env:
+          ZEUS_BUILD_VERSION: ${{ github.ref_name }}
         run: bun run release:build
 
       - name: Publish GitHub release
