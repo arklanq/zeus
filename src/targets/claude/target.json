@@ -1,5 +1,5 @@
 {
   "workerIdColumn": "Session ID",
-  "delegationCoordination": "Divide responsibilities so workers do not overwrite one another's work; for chunks touching the same files, deliberately choose a shared checkout or separate worktrees. Run independent chunks in parallel when useful, preceding each batch with a `mark_chapter` call.",
-  "delegationPublication": "Immediately before creating each worker session, write its title in bold and add one sentence describing its assignment; after creation, give the user a link. Distinguish card creation, session startup after the user clicks, work beginning, and work completion."
+  "delegationCoordination": "Divide responsibilities so workers do not overwrite one another's work; give each worker that edits files its own worktree through `use_worktree: true`. Run independent chunks in parallel when useful.",
+  "delegationPublication": "After creating a session, give the user its link as `[title](#local_<id>)`. Distinguish session creation, work beginning, and work completion."
 }

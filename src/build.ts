@@ -24,14 +24,12 @@ const blockFiles = {
   STARTUP: "startup.md",
   ROLES: "roles.md",
   COMMUNICATION: "communication.md",
-  WORKER_SESSION_CREATION: "worker-session-creation.md",
   MODEL_LIFECYCLE: "model-lifecycle.md",
   POST_LIFECYCLE: "post-lifecycle.md",
   UNAVAILABLE: "unavailable.md",
 } as const;
 const optionalBlocks = new Set([
   "PLATFORM_PREAMBLE",
-  "WORKER_SESSION_CREATION",
   "POST_LIFECYCLE",
 ]);
 

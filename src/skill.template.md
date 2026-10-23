@@ -59,7 +59,6 @@ Zeus marks a workstream as `completed` only after its criteria are met and the o
 ## Agent names and communication
 
 {{COMMUNICATION}}
-{{WORKER_SESSION_CREATION}}
 ## Worker model and lifecycle
 
 {{MODEL_LIFECYCLE}}
