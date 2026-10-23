@@ -91,6 +91,10 @@ async function createOutputs(): Promise<Map<string, string>> {
         value,
       ]),
     );
+    const unusedKeys = Object.keys(values).filter((key) => !skillTemplate.includes(`{{${key}}}`));
+    if (unusedKeys.length > 0) {
+      throw new Error(`Unused ${targetName} target.json values: ${unusedKeys.join(", ")}`);
+    }
 
     for (const [key, filename] of Object.entries(blockFiles)) {
       const path = join(targetDir, filename);
