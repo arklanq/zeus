@@ -73,8 +73,8 @@ describe("install.sh", () => {
 
   test("downloads, verifies, and forwards options without Bun or Node", async () => {
     const { root, invocationPath } = await releaseFixture();
-    await runInstallScript(root, invocationPath, ["--skip-codex"]);
-    expect(await readFile(invocationPath, "utf8")).toBe("install --skip-codex\n");
+    await runInstallScript(root, invocationPath, ["--skip-codex", "--yes"]);
+    expect(await readFile(invocationPath, "utf8")).toBe("install --skip-codex --yes\n");
   });
 
   test("forwards worker settings with their values", async () => {

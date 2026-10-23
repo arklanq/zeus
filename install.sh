@@ -14,6 +14,7 @@ Usage: install.sh [--version <tag>] [Zeus installer options]
 Options:
   --version <tag>                  Install a specific release, for example v1.2.3.
   --dry-run                        Show changes without writing files.
+  --yes, --non-interactive         Do not ask; use flags, saved answers, then defaults.
   --skip-claude                    Do not configure Claude Code.
   --skip-codex                     Do not configure Codex.
   --claude-worker-model <id>       Claude worker model; skips the wizard for Claude.
@@ -38,7 +39,7 @@ while [ "$#" -gt 0 ]; do
       usage
       exit 0
       ;;
-    --dry-run|--skip-claude|--skip-codex)
+    --dry-run|--yes|--non-interactive|--skip-claude|--skip-codex)
       installer_args+=("$1")
       shift
       ;;
@@ -148,13 +149,3 @@ if [ "${#installer_args[@]}" -eq 0 ]; then
 else
   run_installer "$binary_path" install "${installer_args[@]}"
 fi
-
-install_dir="${ZEUS_BIN_DIR:-$HOME/.local/bin}"
-if ! printf '%s' "$PATH" | tr ':' '\n' | grep -Fxq "$install_dir"; then
-  echo
-  echo "${install_dir} is not in PATH. Add it to your shell configuration:"
-  echo "  export PATH=\"${install_dir}:\$PATH\""
-fi
-
-echo
-echo "To uninstall later: ${install_dir}/zeus uninstall"

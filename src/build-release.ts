@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
@@ -25,6 +26,15 @@ const targets: ReleaseTarget[] = hostOnly
       { name: "zeus-linux-x64", target: "bun-linux-x64" },
     ];
 
+// The release workflow passes the tag; local builds describe the checkout instead.
+const version =
+  process.env.ZEUS_BUILD_VERSION ||
+  spawnSync("git", ["describe", "--tags", "--always", "--dirty"], {
+    cwd: projectDir,
+    encoding: "utf8",
+  }).stdout?.trim() ||
+  "development";
+
 await rm(releaseDir, { recursive: true, force: true });
 await mkdir(releaseDir, { recursive: true });
 process.chdir(projectDir);
@@ -41,6 +51,7 @@ for (const releaseTarget of targets) {
       autoloadDotenv: false,
       autoloadPackageJson: false,
     },
+    define: { ZEUS_BUILD_VERSION: JSON.stringify(version) },
     minify: true,
   });
 
@@ -56,5 +67,5 @@ for (const releaseTarget of targets) {
     await writeFile(`${outfile}.sha256`, `${checksum}  ${releaseTarget.name}\n`, "utf8");
   }
 
-  console.log(`Built release/${releaseTarget.name}.`);
+  console.log(`Built release/${releaseTarget.name} (${version}).`);
 }
