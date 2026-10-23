@@ -1,0 +1,16 @@
+{
+  "title": "Przykładowy dashboard",
+  "goal": "Dane demonstracyjne · pięć statusów zadań w jednym, minimalnym widoku.",
+  "now": "Przygotowuję podgląd wyniku.",
+  "next": "Sprawdzić wynik po zakończeniu podglądu.",
+  "tasks": [
+    {"id": "example-done", "title": "Ustalenie zakresu", "status": "done", "evidence": "Zakres został potwierdzony."},
+    {"id": "example-doing", "title": "Podgląd wyniku", "status": "doing", "evidence": "Trwa przygotowanie widoku."},
+    {"id": "example-blocked", "title": "Publikacja", "status": "blocked", "blocker": "Potrzebna zgoda użytkownika."},
+    {"id": "example-todo", "title": "Sprawdzenie wyniku", "status": "todo"},
+    {"id": "example-unknown", "title": "Dodatkowy zakres", "status": "unknown"}
+  ],
+  "milestones": [],
+  "decisions": [{"id": "example-approval", "title": "Zgoda na publikację", "blocking": true, "default": "Pozostawić publikację wstrzymaną."}],
+  "events": []
+}
