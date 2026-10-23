@@ -10,23 +10,15 @@ import {
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type TargetConfig = {
-  workerIdColumn: string;
-  delegationCoordination: string;
-  delegationPublication: string;
-};
+type TargetConfig = Record<string, string>;
 
 const targetNames = ["claude", "codex"] as const;
 const outputMode = 0o644;
 const blockFiles = {
-  HEADER: "header.md",
   PLATFORM_PREAMBLE: "platform-preamble.md",
-  STARTUP: "startup.md",
   ROLES: "roles.md",
-  COMMUNICATION: "communication.md",
   MODEL_LIFECYCLE: "model-lifecycle.md",
   POST_LIFECYCLE: "post-lifecycle.md",
-  UNAVAILABLE: "unavailable.md",
 } as const;
 const optionalBlocks = new Set([
   "PLATFORM_PREAMBLE",
@@ -92,11 +84,13 @@ async function createOutputs(): Promise<Map<string, string>> {
     const config = JSON.parse(
       await readFile(join(targetDir, "target.json"), "utf8"),
     ) as TargetConfig;
-    const values: Record<string, string> = {
-      WORKER_ID_COLUMN: config.workerIdColumn,
-      DELEGATION_COORDINATION: config.delegationCoordination,
-      DELEGATION_PUBLICATION: config.delegationPublication,
-    };
+    // Each camelCase key in target.json fills the matching UPPER_SNAKE_CASE template value.
+    const values: Record<string, string> = Object.fromEntries(
+      Object.entries(config).map(([key, value]) => [
+        key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase(),
+        value,
+      ]),
+    );
 
     for (const [key, filename] of Object.entries(blockFiles)) {
       const path = join(targetDir, filename);
