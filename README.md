@@ -14,7 +14,7 @@ The shell installer detects the operating system and CPU architecture, downloads
 
 In a terminal, the installer shows which agents it detected (CLI, desktop app or configuration directory) and asks which of them to configure; on a later run, the agents Zeus is already installed for are preselected. It then asks for the Worker settings, lists the changes and applies them after confirmation. Without a terminal, or with `--yes`, it configures every detected agent without asking.
 
-The executable is installed to `~/.local/bin/zeus`; the installer says how to add that directory to `PATH` when it is missing there. For each chosen agent, it installs the appropriate SKILL, merges the hook configuration idempotently into `~/.claude/settings.json` or `~/.codex/hooks.json`, and enables and trusts the exact Codex hook definition in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set.
+The executable is installed to `~/.local/bin/zeus`; the installer says how to add that directory to `PATH` when it is missing there. For each chosen agent, it installs the appropriate SKILL into `~/.claude/skills` or, for Codex, `~/.agents/skills`, merges the hook configuration idempotently into `~/.claude/settings.json` or `~/.codex/hooks.json`, and enables and trusts the exact Codex hook definition in `~/.codex/config.toml`. `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, and `ZEUS_BIN_DIR` are respected when set. Codex skills installed by earlier versions in `$CODEX_HOME/skills`, which Codex now treats as deprecated, are moved to `~/.agents/skills` on the next install; files the dashboard skill added itself move with it.
 
 Pin a release, limit the installation, or preview the changes as diffs of the edited files:
 
