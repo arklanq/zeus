@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-09-26",
+  "capturedAt": "2026-10-25",
   "catalogs": {
     "claude": {
       "source": "Anthropic documentation",
@@ -29,8 +29,8 @@
           "defaultEffort": "medium"
         },
         {
-          "id": "claude-sonnet-5",
-          "displayName": "Claude Sonnet 5",
+          "id": "claude-sonnet-5-5",
+          "displayName": "Claude Sonnet 5.5",
           "efforts": [
             "low",
             "medium",
@@ -41,15 +41,36 @@
           "defaultEffort": "high"
         },
         {
-          "id": "claude-haiku-4-5-20251001",
-          "displayName": "Claude Haiku 4.5",
-          "efforts": []
+          "id": "claude-haiku-5-5",
+          "displayName": "Claude Haiku 5.5",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "defaultEffort": "medium"
         }
       ]
     },
     "codex": {
       "source": "Codex app-server model/list",
       "models": [
+        {
+          "id": "gpt-6.1-sol",
+          "displayName": "GPT-6.1-Sol",
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "defaultEffort": "low",
+          "isDefault": true
+        },
         {
           "id": "gpt-6-astra",
           "displayName": "GPT-6-Astra",
@@ -62,7 +83,7 @@
             "ultra"
           ],
           "defaultEffort": "medium",
-          "isDefault": true
+          "isDefault": false
         },
         {
           "id": "gpt-6-sol",
@@ -128,18 +149,6 @@
             "high",
             "xhigh",
             "max"
-          ],
-          "defaultEffort": "medium",
-          "isDefault": false
-        },
-        {
-          "id": "gpt-5.5",
-          "displayName": "GPT-5.5",
-          "efforts": [
-            "low",
-            "medium",
-            "high",
-            "xhigh"
           ],
           "defaultEffort": "medium",
           "isDefault": false
