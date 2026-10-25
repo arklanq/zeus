@@ -180,7 +180,7 @@ export function render(directory) {
   const values = {
     "/*__COMPONENTS__*/": components.replaceAll("</script", "<\\/script"),
     "/*__CUSTOM__*/": custom.replaceAll("</script", "<\\/script"),
-    "/*__STATE__*/": JSON.stringify(state).replace(/[\u007f-￿]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")).replaceAll("<", "\\u003c"),
+    "/*__STATE__*/": JSON.stringify(state).replace(/[\u007f-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")).replaceAll("<", "\\u003c"),
   };
   if (html.includes("/*__FONT_FACE__*/")) values["/*__FONT_FACE__*/"] = fs.readFileSync(path.join(directory, "font.css"), "utf8");
   for (const marker of Object.keys(values)) {
@@ -251,11 +251,12 @@ function serve(directory) {
       });
       return;
     }
+    const route = request.url.split("?")[0];
     try {
-      if (request.url === "/") return reply(render(directory), 200, "text/html");
-      if (request.url === "/health") return reply({ instance });
-      if (request.url === "/state") return reply(read(path.join(directory, "state.json")));
-      if (request.url !== "/events") return reply({ error: "Not found." }, 404);
+      if (route === "/") return reply(render(directory), 200, "text/html");
+      if (route === "/health") return reply({ instance });
+      if (route === "/state") return reply(read(path.join(directory, "state.json")));
+      if (route !== "/events") return reply({ error: "Not found." }, 404);
     } catch (error) {
       console.error(String(error.message ?? error));
       return reply({ error: String(error.message ?? error) }, 500);
@@ -361,12 +362,12 @@ export async function stop(directory) {
   throw new Error("Server did not stop in time.");
 }
 
-/** The shared component library is locked per user, outside the skill directory. */
 /** True when the module at this URL is the script Node was started with. */
 export function isMain(url) {
   return Boolean(process.argv[1]) && url === pathToFileURL(fs.realpathSync(process.argv[1])).href;
 }
 
+/** The shared component library is locked per user, outside the skill directory. */
 export function libraryLockPath() {
   fs.mkdirSync(BASE, { mode: 0o700, recursive: true });
   return path.join(BASE, ".library-" + createHash("sha256").update(SKILL).digest("hex").slice(0, 16) + ".lock");
