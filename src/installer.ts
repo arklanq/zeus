@@ -118,6 +118,8 @@ type AgentPaths = {
   hookMatcher: string;
   codexConfigPath?: string;
   canonicalizeCodexHome?: boolean;
+  /** An earlier skills directory that installs are migrated away from. */
+  legacySkillsDir?: string;
 };
 
 type InstalledHookEntry = {
@@ -276,14 +278,17 @@ function isManagedHookCommand(value: unknown, paths: AgentPaths): boolean {
   }
 
   const normalized = value.replaceAll("\\", "/");
-  const skillPath = paths.skillPath.replaceAll("\\", "/");
-  const expectedSuffix = ` hook --agent ${paths.agent} --skill ${shellQuote(skillPath)}`;
-  if (!normalized.endsWith(expectedSuffix)) {
-    return false;
-  }
+  const legacy = legacyPaths(paths);
+  return [paths.skillPath, ...(legacy ? [legacy.skillPath] : [])].some((path) => {
+    const skillPath = path.replaceAll("\\", "/");
+    const expectedSuffix = ` hook --agent ${paths.agent} --skill ${shellQuote(skillPath)}`;
+    if (!normalized.endsWith(expectedSuffix)) {
+      return false;
+    }
 
-  const executable = normalized.slice(0, -expectedSuffix.length);
-  return executable.startsWith("'") && executable.endsWith("/zeus'");
+    const executable = normalized.slice(0, -expectedSuffix.length);
+    return executable.startsWith("'") && executable.endsWith("/zeus'");
+  });
 }
 
 function canonicalHookEntry(paths: AgentPaths): JsonObject {
@@ -1077,7 +1082,11 @@ function agentPaths(options: LocationOptions, agent: AgentName): AgentPaths {
       ? options.claudeConfigDir ?? join(options.homeDir, ".claude")
       : options.codexHome ?? join(options.homeDir, ".codex"),
   );
-  const skillDir = join(rootDir, "skills", "zeus");
+  // Codex reads user skills from ~/.agents/skills and keeps $CODEX_HOME/skills only for backward compatibility.
+  const skillsDir =
+    agent === "claude" ? join(rootDir, "skills") : join(resolve(options.homeDir), ".agents", "skills");
+  const legacySkillsDir = agent === "codex" ? join(rootDir, "skills") : undefined;
+  const skillDir = join(skillsDir, "zeus");
   if (basename(skillDir) !== "zeus" || basename(dirname(skillDir)) !== "skills") {
     throw new Error(`Refusing unsafe Zeus skill directory: ${skillDir}`);
   }
@@ -1091,14 +1100,37 @@ function agentPaths(options: LocationOptions, agent: AgentName): AgentPaths {
     manifestPath: join(skillDir, MANIFEST_FILENAME),
     dashboardSourceDir: join(options.packageDir ?? "", "skills", "dashboard"),
     dashboardFilesPath: join(options.packageDir ?? "", "dist", "dashboard-files.json"),
-    dashboardDir: join(rootDir, "skills", "dashboard"),
+    dashboardDir: join(skillsDir, "dashboard"),
     hooksConfigPath:
       agent === "claude" ? join(rootDir, "settings.json") : join(rootDir, "hooks.json"),
     hookEvent: agent === "claude" ? "PostCompact" : "SessionStart",
     hookMatcher: agent === "claude" ? "manual|auto" : "compact",
     codexConfigPath: agent === "codex" ? join(rootDir, "config.toml") : undefined,
     canonicalizeCodexHome: agent === "codex" && options.codexHome !== undefined,
+    ...(legacySkillsDir && legacySkillsDir !== skillsDir ? { legacySkillsDir } : {}),
   };
+}
+
+/** The same agent with its skills in the legacy skills directory, if it has one. */
+function legacyPaths(paths: AgentPaths): AgentPaths | undefined {
+  if (!paths.legacySkillsDir) {
+    return undefined;
+  }
+  const skillDir = join(paths.legacySkillsDir, "zeus");
+  return {
+    ...paths,
+    skillDir,
+    skillPath: join(skillDir, SKILL_FILENAME),
+    manifestPath: join(skillDir, MANIFEST_FILENAME),
+    dashboardDir: join(paths.legacySkillsDir, "dashboard"),
+    legacySkillsDir: undefined,
+  };
+}
+
+/** The install manifest, falling back to the legacy location so a migration keeps the recorded ownership. */
+async function readAgentManifest(paths: AgentPaths): Promise<InstallManifest | undefined> {
+  const legacy = legacyPaths(paths);
+  return (await readManifest(paths.manifestPath)) ?? (legacy ? await readManifest(legacy.manifestPath) : undefined);
 }
 
 function isSafeRelativePath(path: unknown): path is string {
@@ -1248,6 +1280,83 @@ async function prepareDashboard(paths: AgentPaths, enabled: boolean): Promise<Da
   return { operations, emptyDirs: stale.emptyDirs };
 }
 
+/**
+ * Removes a dashboard skill Zeus installed in the legacy skills directory. On install, files the dashboard
+ * skill added itself move to the current dashboard directory; on uninstall they stay, as in prepareDashboard.
+ */
+async function prepareLegacyDashboard(
+  paths: AgentPaths,
+  action: InstallerOptions["action"],
+  enabled: boolean,
+): Promise<DashboardPlan> {
+  const legacy = legacyPaths(paths);
+  if (!legacy) {
+    return { operations: [], emptyDirs: [] };
+  }
+  if (action === "uninstall") {
+    return prepareDashboard(legacy, false);
+  }
+  const manifest = await readDashboardManifest(legacy.dashboardDir);
+  if (typeof manifest !== "object") {
+    return { operations: [], emptyDirs: [] };
+  }
+
+  const entries = await readdir(legacy.dashboardDir, { recursive: true, withFileTypes: true });
+  const legacyFiles = entries
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) => relative(legacy.dashboardDir, join(entry.parentPath, entry.name)));
+  // A bundled file is installed fresh, so its stale copy is removed instead of moved over it.
+  const bundled = enabled ? await readDashboardFileList(paths.dashboardFilesPath) : [];
+  const owned = [...manifest.files, ...legacyFiles.filter((file) => bundled.includes(file))];
+  const added = legacyFiles.filter(
+    (file) => file !== DASHBOARD_MANIFEST_FILENAME && !owned.includes(file),
+  );
+  const target = await readDashboardManifest(paths.dashboardDir);
+  if (added.length > 0 && target === "foreign") {
+    throw new Error(
+      `Cannot move the dashboard skill from ${legacy.dashboardDir}: ${paths.dashboardDir} exists and was not installed by Zeus. Move or remove it.`,
+    );
+  }
+
+  const operations: Operation[] = [];
+  for (const file of added) {
+    const source = join(legacy.dashboardDir, file);
+    const destination = join(paths.dashboardDir, file);
+    const content = new Uint8Array(await readFile(source));
+    const existing = await readFile(destination).catch(() => undefined);
+    if (existing && !Buffer.from(content).equals(existing)) {
+      throw new Error(`Cannot move ${source}: ${destination} already exists with different content.`);
+    }
+    operations.push({
+      kind: "write",
+      path: destination,
+      content,
+      mode: (await stat(source)).mode & 0o777,
+      description: `Move ${paths.agent} dashboard skill to ${paths.dashboardDir}`,
+    });
+  }
+  if (added.length > 0 && !enabled) {
+    // The empty manifest keeps the moved files recognizable as Zeus-owned, as prepareDashboard does.
+    operations.push({
+      kind: "write",
+      path: join(paths.dashboardDir, DASHBOARD_MANIFEST_FILENAME),
+      content: `${JSON.stringify({ version: 1, files: [] }, null, 2)}\n`,
+      mode: 0o644,
+      description: `Move ${paths.agent} dashboard skill to ${paths.dashboardDir}`,
+    });
+  }
+
+  const files = [...owned, ...added];
+  for (const file of [...files, DASHBOARD_MANIFEST_FILENAME]) {
+    operations.push({
+      kind: "delete",
+      path: join(legacy.dashboardDir, file),
+      description: `Remove ${paths.agent} dashboard skill from its previous location`,
+    });
+  }
+  return { operations, emptyDirs: dashboardDirectories(legacy.dashboardDir, files) };
+}
+
 async function prepareInstall(
   paths: AgentPaths,
   workerSettings: WorkerSettings,
@@ -1258,7 +1367,7 @@ async function prepareInstall(
     renderInstalledSkill(await readFile(paths.skillSourcePath, "utf8"), paths.agent, workerSettings),
     dashboard,
   );
-  const existingManifest = await readManifest(paths.manifestPath);
+  const existingManifest = await readAgentManifest(paths);
   if (existingManifest && existingManifest.agent !== paths.agent) {
     throw new Error(
       `Cannot safely continue: ${paths.manifestPath} belongs to ${existingManifest.agent}.`,
@@ -1329,13 +1438,21 @@ async function prepareInstall(
     description: `Record ${paths.agent} install ownership`,
   });
 
+  const legacy = legacyPaths(paths);
+  if (legacy) {
+    operations.push(
+      { kind: "delete", path: legacy.skillPath, description: `Remove ${paths.agent} SKILL from its previous location` },
+      { kind: "delete", path: legacy.manifestPath, description: `Remove ${paths.agent} install manifest from its previous location` },
+    );
+  }
+
   return operations;
 }
 
 async function prepareUninstall(
   paths: AgentPaths,
 ): Promise<Operation[]> {
-  const manifest = await readManifest(paths.manifestPath);
+  const manifest = await readAgentManifest(paths);
   if (manifest && manifest.agent !== paths.agent) {
     throw new Error(
       `Cannot safely continue: ${paths.manifestPath} belongs to ${manifest.agent}.`,
@@ -1431,11 +1548,12 @@ async function prepareUninstall(
     }
   }
 
-  for (const [path, description] of [
-    [paths.skillPath, `Remove ${paths.agent} SKILL`],
-    [paths.manifestPath, `Remove ${paths.agent} install manifest`],
-  ] as const) {
-    operations.push({ kind: "delete", path, description });
+  const legacy = legacyPaths(paths);
+  for (const { skillPath, manifestPath } of legacy ? [paths, legacy] : [paths]) {
+    operations.push(
+      { kind: "delete", path: skillPath, description: `Remove ${paths.agent} SKILL` },
+      { kind: "delete", path: manifestPath, description: `Remove ${paths.agent} install manifest` },
+    );
   }
 
   return operations;
@@ -1629,9 +1747,14 @@ export async function planInstaller(
       return prepareInstall(agent, workerSettings, options.dashboard ?? true, options.zeusVersion);
     }),
   );
-  const dashboards = await Promise.all(
-    paths.map((agent) => prepareDashboard(agent, options.action === "install" && (options.dashboard ?? true))),
-  );
+  const dashboardEnabled = options.action === "install" && (options.dashboard ?? true);
+  const dashboards = [
+    ...(await Promise.all(paths.map((agent) => prepareDashboard(agent, dashboardEnabled)))),
+    // After the current dashboard, so an empty manifest written for moved files is not deleted again.
+    ...(await Promise.all(
+      paths.map((agent) => prepareLegacyDashboard(agent, options.action, dashboardEnabled)),
+    )),
+  ];
   operations.push(
     ...plans.flat(),
     ...dashboards.flatMap(({ operations }) => operations),
@@ -1655,6 +1778,7 @@ export async function planInstaller(
     operations: await withoutNoOps(operations),
     skillDirs: [
       ...(options.action === "uninstall" ? paths.map(({ skillDir }) => skillDir) : []),
+      ...paths.flatMap((agent) => legacyPaths(agent)?.skillDir ?? []),
       ...dashboards.flatMap(({ emptyDirs }) => emptyDirs),
     ],
   };
@@ -1678,14 +1802,14 @@ export async function installations(options: LocationOptions): Promise<Installat
   const result: Installation[] = [];
   for (const agent of ["claude", "codex"] as const) {
     const paths = agentPaths(options, agent);
-    const manifest = await readManifest(paths.manifestPath);
+    const manifest = await readAgentManifest(paths);
     if (manifest) {
-      const dashboard = await readDashboardManifest(paths.dashboardDir);
-      result.push({
-        agent,
-        zeusVersion: manifest.zeusVersion,
-        dashboard: typeof dashboard === "object" && dashboard.files.length > 0,
-      });
+      let dashboard = false;
+      for (const { dashboardDir } of [paths, legacyPaths(paths) ?? []].flat()) {
+        const installed = await readDashboardManifest(dashboardDir);
+        dashboard ||= typeof installed === "object" && installed.files.length > 0;
+      }
+      result.push({ agent, zeusVersion: manifest.zeusVersion, dashboard });
     }
   }
   return result;

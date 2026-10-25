@@ -5,6 +5,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  rename,
   rm,
   stat,
   symlink,
@@ -144,14 +145,14 @@ describe("Zeus installer", () => {
       string,
       Record<string, unknown>
     >;
-    const codexCommand = `'${join(homeDir, ".local", "bin", "zeus")}' hook --agent codex --skill '${join(homeDir, ".codex", "skills", "zeus", "SKILL.md")}'`;
+    const codexCommand = `'${join(homeDir, ".local", "bin", "zeus")}' hook --agent codex --skill '${join(homeDir, ".agents", "skills", "zeus", "SKILL.md")}'`;
     expect(codexConfigText).toContain("hooks = true");
     expect(codexState[trustKey]?.trusted_hash).toBe(
       expectedCodexHookHash(codexCommand),
     );
 
     for (const agent of ["claude", "codex"]) {
-      const skillDir = join(homeDir, `.${agent}`, "skills", "zeus");
+      const skillDir = join(homeDir, agent === "claude" ? ".claude" : ".agents", "skills", "zeus");
       expect(await readFile(join(skillDir, "SKILL.md"), "utf8")).toContain("Zeus — workstream coordination");
     }
     expect((await stat(join(homeDir, ".local", "bin", "zeus"))).mode & 0o777).toBe(0o755);
@@ -214,7 +215,7 @@ describe("Zeus installer", () => {
 
     for (const agent of ["claude", "codex"]) {
       expect(
-        await stat(join(homeDir, `.${agent}`, "skills", "zeus")).then(
+        await stat(join(homeDir, agent === "claude" ? ".claude" : ".agents", "skills", "zeus")).then(
           () => true,
           () => false,
         ),
@@ -249,6 +250,116 @@ describe("Zeus installer", () => {
     await runInstaller({ ...common, action: "uninstall" });
     expect(await stat(codexConfig).then(() => true, () => false)).toBe(false);
     expect(await stat(codexHooks).then(() => true, () => false)).toBe(false);
+  });
+
+  test("moves a Codex install from $CODEX_HOME/skills to ~/.agents/skills", async () => {
+    const homeDir = await temporaryHome();
+    const codexConfig = join(homeDir, ".codex", "config.toml");
+    const codexHooks = join(homeDir, ".codex", "hooks.json");
+    const legacySkillsDir = join(homeDir, ".codex", "skills");
+    const skillsDir = join(homeDir, ".agents", "skills");
+    const binary = join(homeDir, ".local", "bin", "zeus");
+    const command = (skillsRoot: string) =>
+      `'${binary}' hook --agent codex --skill '${join(skillsRoot, "zeus", "SKILL.md")}'`;
+    const exists = (path: string) => stat(path).then(() => true, () => false);
+    const common = {
+      agents: ["codex"] as ("claude" | "codex")[],
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      workerSettings,
+    };
+    await mkdir(dirname(codexConfig), { recursive: true });
+    await writeFile(codexConfig, "[features]\nhooks = false\n");
+    await runInstaller({ ...common, action: "install" });
+
+    // Recreate an install made before the move: skills in $CODEX_HOME/skills and a hook trusted for that path.
+    await mkdir(legacySkillsDir, { recursive: true });
+    for (const name of ["zeus", "dashboard"]) {
+      await rename(join(skillsDir, name), join(legacySkillsDir, name));
+    }
+    await writeFile(join(legacySkillsDir, "dashboard", "components", "custom.js"), "export {};\n");
+    const newHash = expectedCodexHookHash(command(skillsDir));
+    const legacyHash = expectedCodexHookHash(command(legacySkillsDir));
+    const legacyManifest = join(legacySkillsDir, "zeus", ".zeus-install.json");
+    for (const [path, from, to] of [
+      [codexHooks, join(skillsDir, "zeus"), join(legacySkillsDir, "zeus")],
+      [codexConfig, newHash, legacyHash],
+      [legacyManifest, newHash, legacyHash],
+    ] as const) {
+      await writeFile(path, (await readFile(path, "utf8")).replaceAll(from, to));
+    }
+
+    expect(await installations(common)).toEqual([
+      { agent: "codex", zeusVersion: undefined, dashboard: true },
+    ]);
+    await runInstaller({ ...common, action: "install" });
+
+    expect(await readFile(join(skillsDir, "zeus", "SKILL.md"), "utf8")).toContain("Zeus — workstream coordination");
+    expect(await readFile(join(skillsDir, "dashboard", "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await exists(join(skillsDir, "dashboard", "SKILL.md"))).toBe(true);
+    expect(await exists(join(legacySkillsDir, "zeus"))).toBe(false);
+    expect(await exists(join(legacySkillsDir, "dashboard"))).toBe(false);
+    const hooks = JSON.parse(await readFile(codexHooks, "utf8")) as Record<string, unknown>;
+    expect(hookEntries(hooks, "SessionStart")).toEqual([
+      {
+        matcher: "compact",
+        hooks: [{ type: "command", command: command(skillsDir), timeout: 30, additionalContextLimit: 0 }],
+      },
+    ]);
+    const config = Bun.TOML.parse(await readFile(codexConfig, "utf8")) as {
+      hooks: { state: Record<string, { trusted_hash?: string }> };
+    };
+    expect(config.hooks.state[`${codexHooks}:session_start:0:0`]?.trusted_hash).toBe(newHash);
+
+    // The ownership recorded before the move still restores the original Codex config.
+    await runInstaller({ ...common, action: "uninstall" });
+    expect(await readFile(codexConfig, "utf8")).toBe("[features]\nhooks = false\n");
+    expect(await exists(join(skillsDir, "zeus"))).toBe(false);
+    expect(await readFile(join(skillsDir, "dashboard", "components", "custom.js"), "utf8")).toBe("export {};\n");
+  });
+
+  test("moving a Codex install with the dashboard off keeps the dashboard's own files Zeus-owned", async () => {
+    const homeDir = await temporaryHome();
+    const legacyDashboard = join(homeDir, ".codex", "skills", "dashboard");
+    const dashboard = join(homeDir, ".agents", "skills", "dashboard");
+    const common = {
+      agents: ["codex"] as ("claude" | "codex")[],
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      workerSettings,
+    };
+    await runInstaller({ ...common, action: "install" });
+    await mkdir(dirname(legacyDashboard), { recursive: true });
+    await rename(dashboard, legacyDashboard);
+    await writeFile(join(legacyDashboard, "components", "custom.js"), "export {};\n");
+
+    await runInstaller({ ...common, action: "install", dashboard: false });
+    expect(await stat(legacyDashboard).then(() => true, () => false)).toBe(false);
+    expect(await readFile(join(dashboard, "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await stat(join(dashboard, "scripts")).then(() => true, () => false)).toBe(false);
+    expect(JSON.parse(await readFile(join(dashboard, ".zeus-dashboard.json"), "utf8"))).toEqual({
+      version: 1,
+      files: [],
+    });
+
+    // A file named like a bundled one but missing from the old manifest is not moved over the fresh copy.
+    await rename(dashboard, legacyDashboard);
+    await mkdir(join(legacyDashboard, "scripts"));
+    await writeFile(join(legacyDashboard, "scripts", "dashboard.mjs"), "stale\n");
+    await runInstaller({ ...common, action: "install" });
+    expect(await stat(legacyDashboard).then(() => true, () => false)).toBe(false);
+    expect(await readFile(join(dashboard, "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await readFile(join(dashboard, "scripts", "dashboard.mjs"))).toEqual(
+      await readFile(join(projectDir, "skills", "dashboard", "scripts", "dashboard.mjs")),
+    );
   });
 
   test("uninstall preserves a hook hash changed after installation", async () => {
@@ -426,7 +537,7 @@ describe("Zeus installer", () => {
     const homeDir = await temporaryHome();
     const codexConfig = join(homeDir, ".codex", "config.toml");
     const codexHooks = join(homeDir, ".codex", "hooks.json");
-    const manifest = join(homeDir, ".codex", "skills", "zeus", ".zeus-install.json");
+    const manifest = join(homeDir, ".agents", "skills", "zeus", ".zeus-install.json");
     const common = {
       agents: ["codex"] as ("claude" | "codex")[],
       dryRun: false,
@@ -605,7 +716,7 @@ describe("Zeus installer", () => {
     });
 
     const claudeSkill = await readFile(join(homeDir, ".claude", "skills", "zeus", "SKILL.md"), "utf8");
-    const codexSkill = await readFile(join(homeDir, ".codex", "skills", "zeus", "SKILL.md"), "utf8");
+    const codexSkill = await readFile(join(homeDir, ".agents", "skills", "zeus", "SKILL.md"), "utf8");
     expect(claudeSkill).toContain('`model: "claude-opus-5-5"` and `effort: "high"`');
     expect(codexSkill).toContain('`model: "gpt-6-sol"` and `thinking: "xhigh"`');
     expect(claudeSkill).not.toContain("<zeus:worker-settings>");
@@ -626,7 +737,7 @@ describe("Zeus installer", () => {
       workerSettings: codexOnly,
       dashboard: false,
     });
-    const codexWithoutDashboard = await readFile(join(homeDir, ".codex", "skills", "zeus", "SKILL.md"), "utf8");
+    const codexWithoutDashboard = await readFile(join(homeDir, ".agents", "skills", "zeus", "SKILL.md"), "utf8");
     expect(codexWithoutDashboard).not.toContain("dashboard");
     expect(codexWithoutDashboard).toContain("Then immediately set your own thread title");
     expect(codexWithoutDashboard).toMatch(/marker exactly once and never change its value\.\n\n## Roles and Worker sessions\n/);
