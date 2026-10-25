@@ -89,7 +89,7 @@ The Coordinator marks a workstream as `completed` only after its criteria are me
 - The Coordinator's title, `@ ZEUS {zeus-id}: {action summary}`, describes the workstream the Coordinator is currently handling and is updated whenever the Coordinator switches workstreams.
 - A Worker uses the title `└─ {Name}: {action summary}`, for example `└─ Jake: Analyze logs`. While it works on a pull request, it uses `└─ {Name}: #{PR number} {action summary}` instead, for example `└─ Jake: #12 Fix failing tests`.
 - Every agent updates `{action summary}` through `set_thread_title` without a `threadId` after a material scope change while retaining its prefix, role, and name. A Worker also updates its title when it starts or stops working on a pull request.
-- The Coordinator assigns the Worker's initial title and requires the Worker to update its own title later.
+- The Coordinator assigns the Worker's initial title, including the pull request number when the assignment concerns an existing pull request, and requires the Worker to update its own title later.
 
 Every inter-agent message begins with this standalone line:
 
