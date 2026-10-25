@@ -43,7 +43,8 @@ test("merges tasks, validates patches and ignores no-op updates", () => {
 
 test("concurrent updates from separate processes preserve unrelated tasks", async () => {
   const run = promisify(execFile);
-  const base = fs.mkdtempSync(path.join(runtime.BASE, "concurrency-"));
+  fs.mkdirSync(runtime.BASE, { mode: 0o700, recursive: true });
+  const base =fs.mkdtempSync(path.join(runtime.BASE, "concurrency-"));
   try {
     runtime.atomic(path.join(base, "state.json"), JSON.parse(fs.readFileSync(path.join(root, "state.json"), "utf8")));
     await Promise.all(
