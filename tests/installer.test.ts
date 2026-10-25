@@ -322,6 +322,46 @@ describe("Zeus installer", () => {
     expect(await readFile(join(skillsDir, "dashboard", "components", "custom.js"), "utf8")).toBe("export {};\n");
   });
 
+  test("moving a Codex install with the dashboard off keeps the dashboard's own files Zeus-owned", async () => {
+    const homeDir = await temporaryHome();
+    const legacyDashboard = join(homeDir, ".codex", "skills", "dashboard");
+    const dashboard = join(homeDir, ".agents", "skills", "dashboard");
+    const common = {
+      agents: ["codex"] as ("claude" | "codex")[],
+      dryRun: false,
+      homeDir,
+      packageDir: projectDir,
+      binarySourcePath: join(projectDir, "install.sh"),
+      binaryInstallDir: join(homeDir, ".local", "bin"),
+      log: () => {},
+      workerSettings,
+    };
+    await runInstaller({ ...common, action: "install" });
+    await mkdir(dirname(legacyDashboard), { recursive: true });
+    await rename(dashboard, legacyDashboard);
+    await writeFile(join(legacyDashboard, "components", "custom.js"), "export {};\n");
+
+    await runInstaller({ ...common, action: "install", dashboard: false });
+    expect(await stat(legacyDashboard).then(() => true, () => false)).toBe(false);
+    expect(await readFile(join(dashboard, "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await stat(join(dashboard, "scripts")).then(() => true, () => false)).toBe(false);
+    expect(JSON.parse(await readFile(join(dashboard, ".zeus-dashboard.json"), "utf8"))).toEqual({
+      version: 1,
+      files: [],
+    });
+
+    // A file named like a bundled one but missing from the old manifest is not moved over the fresh copy.
+    await rename(dashboard, legacyDashboard);
+    await mkdir(join(legacyDashboard, "scripts"));
+    await writeFile(join(legacyDashboard, "scripts", "dashboard.mjs"), "stale\n");
+    await runInstaller({ ...common, action: "install" });
+    expect(await stat(legacyDashboard).then(() => true, () => false)).toBe(false);
+    expect(await readFile(join(dashboard, "components", "custom.js"), "utf8")).toBe("export {};\n");
+    expect(await readFile(join(dashboard, "scripts", "dashboard.mjs"))).toEqual(
+      await readFile(join(projectDir, "skills", "dashboard", "scripts", "dashboard.mjs")),
+    );
+  });
+
   test("uninstall preserves a hook hash changed after installation", async () => {
     const homeDir = await temporaryHome();
     const codexConfig = join(homeDir, ".codex", "config.toml");

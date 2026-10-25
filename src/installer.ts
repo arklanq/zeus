@@ -1302,10 +1302,15 @@ async function prepareLegacyDashboard(
   }
 
   const entries = await readdir(legacy.dashboardDir, { recursive: true, withFileTypes: true });
-  const added = entries
+  const legacyFiles = entries
     .filter((entry) => !entry.isDirectory())
-    .map((entry) => relative(legacy.dashboardDir, join(entry.parentPath, entry.name)))
-    .filter((file) => file !== DASHBOARD_MANIFEST_FILENAME && !manifest.files.includes(file));
+    .map((entry) => relative(legacy.dashboardDir, join(entry.parentPath, entry.name)));
+  // A bundled file is installed fresh, so its stale copy is removed instead of moved over it.
+  const bundled = enabled ? await readDashboardFileList(paths.dashboardFilesPath) : [];
+  const owned = [...manifest.files, ...legacyFiles.filter((file) => bundled.includes(file))];
+  const added = legacyFiles.filter(
+    (file) => file !== DASHBOARD_MANIFEST_FILENAME && !owned.includes(file),
+  );
   const target = await readDashboardManifest(paths.dashboardDir);
   if (added.length > 0 && target === "foreign") {
     throw new Error(
@@ -1341,7 +1346,7 @@ async function prepareLegacyDashboard(
     });
   }
 
-  const files = [...manifest.files, ...added];
+  const files = [...owned, ...added];
   for (const file of [...files, DASHBOARD_MANIFEST_FILENAME]) {
     operations.push({
       kind: "delete",
