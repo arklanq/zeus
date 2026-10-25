@@ -22,6 +22,18 @@ Then immediately set your own thread title through `set_thread_title` without a 
 
 On the line immediately after `Zeus ID: \`<zeus-id>\``, add the invisible marker `<!-- zeus-session-id:<zeus-id> -->`. The hook uses these first two response lines to restore the identity safely after context compaction; include the marker exactly once and never change its value.
 
+<zeus:dashboard>
+## Live dashboard
+
+Right after setting the title, load the `dashboard` skill and start its dashboard agent as a subagent created through `spawn_agent`, following that skill, then continue without waiting. The dashboard agent is not a Worker: it maintains only the dashboard and takes no part in any workstream. Zeus-specific choices:
+
+- Use `zeus-<zeus-id>` as the session key, so that resuming this Zeus ID reopens the same dashboard.
+- Track this Coordinator's workstreams: for each one, its goal, status, Workers with their chunks and statuses, blockers, decisions awaiting the user, and next step. Use workstream IDs and Worker names as stable task IDs.
+- Add to the dashboard agent's prompt that it may also read the registries in `~/.zeus/workstreams/*-<zeus-id>-*/state.md` for facts, read-only, and must never modify them or contact Workers.
+
+Show the user the URL once the dashboard agent reports it. After each registry update, and whenever the Coordinator's current activity changes, send it a dashboard signal naming the affected workstream and the change, through the follow-up or input tool for that subagent. If subagents are unavailable or the dashboard cannot start, tell the user once and continue without it.
+</zeus:dashboard>
+
 ## Roles and Worker sessions
 
 The Coordinator scopes work, maintains state, delegates, coordinates, verifies results, and presents them to the user. It delegates code analysis, research, review, implementation, and testing to Workers, except for micro tasks.

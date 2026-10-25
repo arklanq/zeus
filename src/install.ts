@@ -19,6 +19,7 @@ import { runHook } from "./hook.ts";
 import {
   applyInstallerPlan,
   describeOperation,
+  foreignDashboards,
   installations,
   installedAgents,
   planInstaller,
@@ -57,11 +58,13 @@ Options:
   --claude-worker-effort <level>   Claude worker effort (defaults to the model default).
   --codex-worker-model <id>        Codex worker model; skips the wizard for Codex.
   --codex-worker-effort <level>    Codex worker effort (defaults to the model default).
+  --dashboard, --no-dashboard      Install the dashboard skill and use it in Zeus sessions, or not.
   -h, --help                       Show this help.
 
 In a terminal, install asks which detected agents to configure and which model and
 effort worker sessions use for each. Without a terminal or with --yes, it configures
-every detected agent and reuses the choice saved in ~/.zeus/config.json.`;
+every detected agent and reuses the choice saved in ~/.zeus/config.json. It also asks
+whether to install the dashboard skill and use it in Zeus sessions (default: yes).`;
 
 function fail(message: string): never {
   console.error(message);
@@ -134,6 +137,8 @@ const supportedFlags = new Set([
   "--non-interactive",
   "--skip-claude",
   "--skip-codex",
+  "--dashboard",
+  "--no-dashboard",
 ]);
 const workerOptions = [
   "--claude-worker-model",
@@ -146,10 +151,11 @@ for (let index = 0; index < args.length; index += 1) {
   if (command === "status") {
     fail(`status does not take options: ${argument}`);
   }
+  const installOnly = workerOptions.includes(argument) || argument === "--dashboard" || argument === "--no-dashboard";
+  if (installOnly && command !== "install") {
+    fail(`${argument} is only supported by install.`);
+  }
   if (workerOptions.includes(argument)) {
-    if (command !== "install") {
-      fail(`${argument} is only supported by install.`);
-    }
     optionValue(args.slice(index), argument);
     index += 1;
   } else if (!supportedFlags.has(argument)) {
@@ -194,6 +200,11 @@ const workerFlags = {
     effort: optionValue(args, "--codex-worker-effort"),
   },
 };
+if (args.includes("--dashboard") && args.includes("--no-dashboard")) {
+  fail("--dashboard and --no-dashboard cannot be combined.");
+}
+const dashboardFlag = args.includes("--dashboard") ? true : args.includes("--no-dashboard") ? false : undefined;
+
 for (const agent of skipped) {
   const flags = workerFlags[agent];
   if (flags.model || flags.effort) {
@@ -262,7 +273,8 @@ function uninstallCommand(): string {
 }
 
 function changes(plan: InstallerPlan): string[] {
-  return plan.operations.map((operation) => operation.description);
+  // The dashboard skill is written file by file under one description.
+  return [...new Set(plan.operations.map((operation) => operation.description))];
 }
 
 function printPlan(plan: InstallerPlan): void {
@@ -361,14 +373,32 @@ async function install(): Promise<void> {
     }
   }
 
+  const saved = await readZeusConfig(zeusConfigPath(homeDir!));
   const workerSettings = await resolveWorkerSettings({
     agents,
     flags: workerFlags,
-    saved: (await readZeusConfig(zeusConfigPath(homeDir!)))?.workers ?? {},
+    saved: saved?.workers ?? {},
     prompter: interactive ? terminalPrompter : undefined,
     catalogSource,
     log: console.log,
   });
+  // Asking first avoids failing only after every answer when the user has their own dashboard skill.
+  const foreign = dashboardFlag === undefined && interactive ? await foreignDashboards(locations, agents) : [];
+  if (foreign.length > 0) {
+    log.warn(
+      `${foreign.join(" and ")} already holds a dashboard skill that Zeus did not install. Move it away before choosing the bundled one.`,
+    );
+  }
+  const dashboard =
+    dashboardFlag ??
+    (interactive
+      ? exitIfCancelled(
+          await confirm({
+            message: "Install the dashboard skill and start the live dashboard in Zeus sessions?",
+            initialValue: foreign.length === 0 && (saved?.dashboard ?? true),
+          }),
+        )
+      : (saved?.dashboard ?? true));
 
   const plan = await planInstaller({
     action: "install",
@@ -380,17 +410,22 @@ async function install(): Promise<void> {
     claudeConfigDir: locations.claudeConfigDir,
     codexHome: locations.codexHome,
     workerSettings,
+    dashboard,
     zeusVersion: ZEUS_VERSION,
   });
   const applied = await confirmAndApply(plan, "Apply these changes?");
 
   report([
     ...agents.map((agent) => `${AGENT_NAMES[agent]} Worker: ${describeWorkerSettings(workerSettings[agent])}.`),
+    `Dashboard: ${dashboard ? "on" : "off"}.`,
     ...(applied && plan.operations.length > 0 ? ["Start a new agent session so Zeus is loaded."] : []),
   ]);
   const warning = pathWarning();
   if (warning) {
     report([warning], "warn");
+  }
+  if (dashboard && !Bun.which("node")) {
+    report(["The dashboard skill runs on Node.js, which is not in PATH. Install Node.js 18 or newer to use it."], "warn");
   }
   if (interactive && !dryRun) {
     outro(`To uninstall: ${uninstallCommand()}`);
@@ -457,10 +492,12 @@ async function status(): Promise<void> {
       ? `Zeus ${describeVersion(installed[0]!.zeusVersion)} is installed for:`
       : "Zeus is installed for:",
   );
-  for (const { agent, zeusVersion } of installed) {
+  for (const { agent, zeusVersion, dashboard } of installed) {
     const settings = workers[agent];
     const version = shared ? "" : ` (${versionLabel(zeusVersion)})`;
-    console.log(`- ${AGENT_NAMES[agent]}${version}, Worker: ${settings ? describeWorkerSettings(settings) : "not set"}`);
+    console.log(
+      `- ${AGENT_NAMES[agent]}${version}, Worker: ${settings ? describeWorkerSettings(settings) : "not set"}, dashboard: ${dashboard ? "on" : "off"}`,
+    );
   }
 }
 

@@ -14,6 +14,7 @@ import { createHash } from "node:crypto";
 import {
   chmod,
   lstat,
+  readdir,
   mkdir,
   readFile,
   realpath,
@@ -23,16 +24,18 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 import {
   describeWorkerSettings,
   readZeusConfig,
+  renderDashboardSection,
   renderInstalledSkill,
   serializeZeusConfig,
   zeusConfigPath,
   type WorkerSettings,
   type WorkerSettingsByAgent,
+  type ZeusConfig,
 } from "./worker-settings.ts";
 import { redactSecrets, renderDiff } from "./diff.ts";
 
@@ -93,6 +96,8 @@ export type InstallerOptions = {
   claudeConfigDir?: string;
   codexHome?: string;
   workerSettings?: WorkerSettingsByAgent;
+  /** Whether the installed SKILL starts the live dashboard; defaults to true. */
+  dashboard?: boolean;
   /** Recorded in each install manifest so status can report what is installed. */
   zeusVersion?: string;
   log?: (message: string) => void;
@@ -105,6 +110,9 @@ type AgentPaths = {
   skillDir: string;
   skillPath: string;
   manifestPath: string;
+  dashboardSourceDir: string;
+  dashboardFilesPath: string;
+  dashboardDir: string;
   hooksConfigPath: string;
   hookEvent: "PostCompact" | "SessionStart";
   hookMatcher: string;
@@ -129,6 +137,12 @@ type CodexHookStateKeyMove = {
 const MANIFEST_FILENAME = ".zeus-install.json";
 const SKILL_FILENAME = "SKILL.md";
 const BINARY_FILENAME = "zeus";
+const DASHBOARD_MANIFEST_FILENAME = ".zeus-dashboard.json";
+
+type DashboardManifest = {
+  version: 1;
+  files: string[];
+};
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -1075,6 +1089,9 @@ function agentPaths(options: LocationOptions, agent: AgentName): AgentPaths {
     skillDir,
     skillPath: join(skillDir, SKILL_FILENAME),
     manifestPath: join(skillDir, MANIFEST_FILENAME),
+    dashboardSourceDir: join(options.packageDir ?? "", "skills", "dashboard"),
+    dashboardFilesPath: join(options.packageDir ?? "", "dist", "dashboard-files.json"),
+    dashboardDir: join(rootDir, "skills", "dashboard"),
     hooksConfigPath:
       agent === "claude" ? join(rootDir, "settings.json") : join(rootDir, "hooks.json"),
     hookEvent: agent === "claude" ? "PostCompact" : "SessionStart",
@@ -1084,15 +1101,162 @@ function agentPaths(options: LocationOptions, agent: AgentName): AgentPaths {
   };
 }
 
+function isSafeRelativePath(path: unknown): path is string {
+  return (
+    typeof path === "string" &&
+    path !== "" &&
+    !path.startsWith("/") &&
+    !path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")
+  );
+}
+
+async function readDashboardFileList(path: string): Promise<string[]> {
+  const value: unknown = JSON.parse(await readFile(path, "utf8"));
+  if (!Array.isArray(value) || !value.every(isSafeRelativePath)) {
+    throw new Error(`The dashboard skill file list ${path} is invalid.`);
+  }
+  return value;
+}
+
+/** Returns the Zeus dashboard manifest, or undefined when the directory does not exist. */
+async function readDashboardManifest(dashboardDir: string): Promise<DashboardManifest | "foreign" | undefined> {
+  try {
+    const entry = await lstat(dashboardDir);
+    if (!entry.isDirectory()) {
+      return "foreign";
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  const path = join(dashboardDir, DASHBOARD_MANIFEST_FILENAME);
+  const file = await readOptional(path);
+  if (!file.exists) {
+    return "foreign";
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(file.content);
+  } catch {
+    throw new Error(`Cannot safely continue: ${path} is not valid JSON.`);
+  }
+  if (
+    !isObject(value) ||
+    value.version !== 1 ||
+    !Array.isArray(value.files) ||
+    !value.files.every(isSafeRelativePath)
+  ) {
+    throw new Error(`Cannot safely continue: ${path} is not a Zeus dashboard manifest.`);
+  }
+  return { version: 1, files: value.files };
+}
+
+/** Directories that removing these files may leave empty, deepest first, ending with the dashboard directory. */
+function dashboardDirectories(dashboardDir: string, files: string[]): string[] {
+  const directories = new Set<string>();
+  for (const file of files) {
+    for (let directory = dirname(file); directory !== "."; directory = dirname(directory)) {
+      directories.add(join(dashboardDir, directory));
+    }
+  }
+  return [...[...directories].sort((a, b) => b.split("/").length - a.split("/").length), dashboardDir];
+}
+
+async function hasOtherFiles(dashboardDir: string, files: string[]): Promise<boolean> {
+  const entries = await readdir(dashboardDir, { recursive: true, withFileTypes: true });
+  const known = new Set([...files, DASHBOARD_MANIFEST_FILENAME]);
+  return entries.some(
+    (entry) => !entry.isDirectory() && !known.has(relative(dashboardDir, join(entry.parentPath, entry.name))),
+  );
+}
+
+type DashboardPlan = {
+  operations: Operation[];
+  /** Directories to remove when the plan leaves them empty. */
+  emptyDirs: string[];
+};
+
+function removeDashboard(paths: AgentPaths, files: string[]): DashboardPlan {
+  const removed = files.map((file): Operation => ({
+    kind: "delete",
+    path: join(paths.dashboardDir, file),
+    description: `Remove ${paths.agent} dashboard skill`,
+  }));
+  return { operations: removed, emptyDirs: dashboardDirectories(paths.dashboardDir, files) };
+}
+
+/** Installs, updates or removes the bundled dashboard skill; never touches a dashboard Zeus does not own. */
+async function prepareDashboard(paths: AgentPaths, enabled: boolean): Promise<DashboardPlan> {
+  const manifest = await readDashboardManifest(paths.dashboardDir);
+  if (manifest === "foreign") {
+    if (enabled) {
+      throw new Error(
+        `Cannot install the dashboard skill: ${paths.dashboardDir} exists and was not installed by Zeus. Move or remove it, or install with --no-dashboard.`,
+      );
+    }
+    return { operations: [], emptyDirs: [] };
+  }
+
+  if (!enabled) {
+    if (!manifest) {
+      return { operations: [], emptyDirs: [] };
+    }
+    const plan = removeDashboard(paths, manifest.files);
+    const manifestPath = join(paths.dashboardDir, DASHBOARD_MANIFEST_FILENAME);
+    // Files the dashboard skill added itself, such as promoted components, stay; the empty manifest
+    // keeps the directory recognizable as Zeus-owned so the dashboard can be installed again.
+    plan.operations.push(
+      (await hasOtherFiles(paths.dashboardDir, manifest.files))
+        ? {
+            kind: "write",
+            path: manifestPath,
+            content: `${JSON.stringify({ version: 1, files: [] }, null, 2)}\n`,
+            mode: 0o644,
+            description: `Remove ${paths.agent} dashboard skill`,
+          }
+        : { kind: "delete", path: manifestPath, description: `Remove ${paths.agent} dashboard skill` },
+    );
+    return plan;
+  }
+
+  const files = await readDashboardFileList(paths.dashboardFilesPath);
+  const stale = removeDashboard(
+    paths,
+    (manifest?.files ?? []).filter((file) => !files.includes(file)),
+  );
+  const operations: Operation[] = [];
+  for (const file of files) {
+    operations.push({
+      kind: "write",
+      path: join(paths.dashboardDir, file),
+      content: new Uint8Array(await readFile(join(paths.dashboardSourceDir, file))),
+      mode: 0o644,
+      description: `Install ${paths.agent} dashboard skill`,
+    });
+  }
+  const installed: DashboardManifest = { version: 1, files };
+  operations.push(...stale.operations, {
+    kind: "write",
+    path: join(paths.dashboardDir, DASHBOARD_MANIFEST_FILENAME),
+    content: `${JSON.stringify(installed, null, 2)}\n`,
+    mode: 0o644,
+    description: `Install ${paths.agent} dashboard skill`,
+  });
+  return { operations, emptyDirs: stale.emptyDirs };
+}
+
 async function prepareInstall(
   paths: AgentPaths,
   workerSettings: WorkerSettings,
+  dashboard: boolean,
   zeusVersion: string | undefined,
 ): Promise<Operation[]> {
-  const skillSource = renderInstalledSkill(
-    await readFile(paths.skillSourcePath, "utf8"),
-    paths.agent,
-    workerSettings,
+  const skillSource = renderDashboardSection(
+    renderInstalledSkill(await readFile(paths.skillSourcePath, "utf8"), paths.agent, workerSettings),
+    dashboard,
   );
   const existingManifest = await readManifest(paths.manifestPath);
   if (existingManifest && existingManifest.agent !== paths.agent) {
@@ -1353,6 +1517,8 @@ async function prepareZeusConfig(
   const path = zeusConfigPath(options.homeDir);
   const existing = await readZeusConfig(path);
   const workers: WorkerSettingsByAgent = { ...existing?.workers };
+  const config = (dashboard: boolean | undefined): ZeusConfig =>
+    dashboard === undefined ? { version: 1, workers } : { version: 1, workers, dashboard };
 
   if (options.action === "uninstall") {
     if (!existing || !options.agents.some((agent) => workers[agent])) {
@@ -1368,7 +1534,7 @@ async function prepareZeusConfig(
       {
         kind: "write",
         path,
-        content: serializeZeusConfig({ version: 1, workers }),
+        content: serializeZeusConfig(config(existing.dashboard)),
         mode: 0o644,
         description: `Remove ${options.agents.join(" and ")} Worker settings`,
       },
@@ -1383,13 +1549,14 @@ async function prepareZeusConfig(
     workers[agent] = settings;
     return `${agent}: ${describeWorkerSettings(settings)}`;
   });
+  const dashboard = options.dashboard ?? true;
   return [
     {
       kind: "write",
       path,
-      content: serializeZeusConfig({ version: 1, workers }),
+      content: serializeZeusConfig(config(dashboard)),
       mode: 0o644,
-      description: `Record Worker settings (${recorded.join(", ")})`,
+      description: `Record Worker settings (${recorded.join(", ")}) and dashboard ${dashboard ? "on" : "off"}`,
     },
   ];
 }
@@ -1398,6 +1565,7 @@ export type InstallerPlan = {
   action: InstallerOptions["action"];
   agents: AgentName[];
   operations: Operation[];
+  /** Directories removed after applying the plan when it leaves them empty. */
   skillDirs: string[];
 };
 
@@ -1458,10 +1626,17 @@ export async function planInstaller(
       if (!workerSettings) {
         throw new Error(`Worker settings for ${agent.agent} are required for installation.`);
       }
-      return prepareInstall(agent, workerSettings, options.zeusVersion);
+      return prepareInstall(agent, workerSettings, options.dashboard ?? true, options.zeusVersion);
     }),
   );
-  operations.push(...plans.flat(), ...(await prepareZeusConfig(options)));
+  const dashboards = await Promise.all(
+    paths.map((agent) => prepareDashboard(agent, options.action === "install" && (options.dashboard ?? true))),
+  );
+  operations.push(
+    ...plans.flat(),
+    ...dashboards.flatMap(({ operations }) => operations),
+    ...(await prepareZeusConfig(options)),
+  );
 
   if (options.action === "uninstall") {
     const remaining = await installedAgents(options);
@@ -1478,30 +1653,51 @@ export async function planInstaller(
     action: options.action,
     agents: options.agents,
     operations: await withoutNoOps(operations),
-    skillDirs: paths.map(({ skillDir }) => skillDir),
+    skillDirs: [
+      ...(options.action === "uninstall" ? paths.map(({ skillDir }) => skillDir) : []),
+      ...dashboards.flatMap(({ emptyDirs }) => emptyDirs),
+    ],
   };
 }
 
 export async function applyInstallerPlan(plan: InstallerPlan): Promise<void> {
   await executeOperations(plan.operations);
-  if (plan.action === "uninstall") {
-    await removeEmptySkillDirectories(plan.skillDirs);
-  }
+  await removeEmptySkillDirectories(plan.skillDirs);
 }
 
 export type Installation = {
   agent: AgentName;
   /** Missing for installations made before Zeus recorded its version. */
   zeusVersion?: string;
+  /** Whether Zeus installed the dashboard skill for this agent. */
+  dashboard: boolean;
 };
 
 /** Agents with a Zeus install manifest, which is what uninstall removes. */
 export async function installations(options: LocationOptions): Promise<Installation[]> {
   const result: Installation[] = [];
   for (const agent of ["claude", "codex"] as const) {
-    const manifest = await readManifest(agentPaths(options, agent).manifestPath);
+    const paths = agentPaths(options, agent);
+    const manifest = await readManifest(paths.manifestPath);
     if (manifest) {
-      result.push({ agent, zeusVersion: manifest.zeusVersion });
+      const dashboard = await readDashboardManifest(paths.dashboardDir);
+      result.push({
+        agent,
+        zeusVersion: manifest.zeusVersion,
+        dashboard: typeof dashboard === "object" && dashboard.files.length > 0,
+      });
+    }
+  }
+  return result;
+}
+
+/** Agents whose skills directory holds a `dashboard` skill that Zeus did not install. */
+export async function foreignDashboards(options: LocationOptions, agents: AgentName[]): Promise<string[]> {
+  const result: string[] = [];
+  for (const agent of agents) {
+    const { dashboardDir } = agentPaths(options, agent);
+    if ((await readDashboardManifest(dashboardDir)) === "foreign") {
+      result.push(dashboardDir);
     }
   }
   return result;
