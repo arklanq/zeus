@@ -24,8 +24,12 @@ Codex may ask you to approve the new hook in `/hooks`.
 ```text
 /zeus            start a Coordinator
 /zeus atlas      resume Coordinator atlas
+/zeus --max 4    allow at most 4 Workers at a time
+/zeus --pool 3   start 3 Workers up front and reuse them
 /dashboard       open the live dashboard (needs Node.js 18+)
 ```
+
+Options follow the optional ID, as in `/zeus atlas --pool 3`, and are remembered for that ID. A pool is useful in Claude, where every new session waits for your approval: you approve all pool sessions once at the start, and Zeus then reuses them instead of starting new ones.
 
 In Codex, call the skills as `$zeus` and `$dashboard`.
 
