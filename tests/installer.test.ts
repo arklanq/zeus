@@ -740,7 +740,7 @@ describe("Zeus installer", () => {
     const codexWithoutDashboard = await readFile(join(homeDir, ".agents", "skills", "zeus", "SKILL.md"), "utf8");
     expect(codexWithoutDashboard).not.toContain("dashboard");
     expect(codexWithoutDashboard).toContain("Then immediately set your own thread title");
-    expect(codexWithoutDashboard).toMatch(/marker exactly once and never change its value\.\n\n## Roles and Worker sessions\n/);
+    expect(codexWithoutDashboard).toMatch(/marker exactly once and never change its value\.\n\n## Coordinator options\n/);
     expect(JSON.parse(await readFile(configPath, "utf8"))).toEqual({
       version: 1,
       workers: { claude: workerSettings.claude, ...codexOnly },
