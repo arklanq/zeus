@@ -1,0 +1,5 @@
+A Worker reports its result, question, or blocker by ending its turn with a final message that begins with `Message from {Name}:`; require this in the assignment instead of asking the Worker to message the Coordinator's thread.
+
+Wait through `wait_threads` with up to eight Workers in `targets`, using their `threadId`, `hostId` when known, and the last returned cursor as `afterCursor`. It returns when a Worker completes or needs attention, the timeout expires, or new user input arrives; commentary does not wake it. After a timeout, continue waiting with the updated cursors if results are still pending. Do not poll `read_thread` in a loop or assume an idle Coordinator resumes automatically.
+
+For a progress snapshot, use `wait_threads` with `timeoutMs: 0`. Read a Worker's report and recent turns through `read_thread`; use `turnLimit: 1` for the latest turn, pagination cursors for older turns, and increase `maxOutputCharsPerItem` if the report is truncated. Present a concise status rather than a transcript. No dedicated tool to stop a Worker thread's turn is available in the verified tool set; do not treat a follow-up message or archiving as a confirmed stop.

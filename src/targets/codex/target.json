@@ -7,7 +7,7 @@
   "withoutArgument": "**Invocation without a Zeus ID** (`/zeus [options]`)",
   "zeusTitleCall": "`set_thread_title` without a `threadId`, using `@ ZEUS {zeus-id}: {action summary}`",
   "titleTool": "`set_thread_title` without a `threadId`",
-  "followUpMessages": "",
+  "followUpMessages": " The Coordinator sends later messages through `send_message_to_thread` with the Worker's `threadId`, its `hostId` when known, and the message in `prompt`, only when the user has explicitly authorized messaging that Worker.",
   "refusedStart": "",
   "subagentKind": "internal",
   "workerIdColumn": "Thread ID",

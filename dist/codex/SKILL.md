@@ -130,13 +130,19 @@ Every inter-agent message begins with this standalone line:
 Message from {agent name}:
 ```
 
-The Coordinator uses the name `Zeus`, while a Worker uses its assigned name. The initial assignment starts with `Message from Zeus:` and includes the Worker's assigned name.
+The Coordinator uses the name `Zeus`, while a Worker uses its assigned name. The initial assignment starts with `Message from Zeus:` and includes the Worker's assigned name. The Coordinator sends later messages through `send_message_to_thread` with the Worker's `threadId`, its `hostId` when known, and the message in `prompt`, only when the user has explicitly authorized messaging that Worker.
 
 ## Worker model and lifecycle
 
 Do not change the Coordinator's model while delegating. When creating and continuing a Worker thread, explicitly pass <zeus:worker-settings> unless the user requests other settings. Defaults or a model name written inside the assignment are insufficient. If those parameters are unavailable, agree on a substitute with the user before starting the assignment.
 
 A Worker session handles one bounded assignment in one workstream; Workers do not form a permanent pool. Resume it only while its original assignment remains open, such as for clarification, in-scope corrections, or verification. After the Coordinator accepts its result, stop monitoring it and do not wake it for new work. Every later independent task requires a new session and a new Worker, regardless of shared repository, feature, or expertise. When a pool is set, "Worker pool" replaces this paragraph.
+
+A Worker reports its result, question, or blocker by ending its turn with a final message that begins with `Message from {Name}:`; require this in the assignment instead of asking the Worker to message the Coordinator's thread.
+
+Wait through `wait_threads` with up to eight Workers in `targets`, using their `threadId`, `hostId` when known, and the last returned cursor as `afterCursor`. It returns when a Worker completes or needs attention, the timeout expires, or new user input arrives; commentary does not wake it. After a timeout, continue waiting with the updated cursors if results are still pending. Do not poll `read_thread` in a loop or assume an idle Coordinator resumes automatically.
+
+For a progress snapshot, use `wait_threads` with `timeoutMs: 0`. Read a Worker's report and recent turns through `read_thread`; use `turnLimit: 1` for the latest turn, pagination cursors for older turns, and increase `maxOutputCharsPerItem` if the report is truncated. Present a concise status rather than a transcript. No dedicated tool to stop a Worker thread's turn is available in the verified tool set; do not treat a follow-up message or archiving as a confirmed stop.
 
 ## Delegation and coordination
 
