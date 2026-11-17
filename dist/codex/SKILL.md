@@ -92,7 +92,7 @@ Before the first delegation in every workstream that requires delegation, the Co
 - Goal:
 - Completion criteria:
 - Repositories or directories:
-- Scope and constraints:
+- Scope:
 - Next step:
 
 ## Workers
@@ -104,6 +104,8 @@ Before the first delegation in every workstream that requires delegation, the Co
 ## Decisions
 ## Blockers
 ```
+
+Together with `state.md`, the Coordinator creates `rules.md` next to it, and adds one when resuming a workstream that lacks it. `state.md` records what the workstream must deliver; `rules.md` records how every Worker in it works: the approval policy from "Delegation and coordination", repository conventions, constraints, required checks, Git rules, which Worker owns which paths, and the user's approvals that apply. Each assignment gives its absolute path instead of repeating these rules.
 
 When resuming a registry created by an earlier version whose labels differ from the English schema above, interpret its fields by structure, order, and stored values. Before any other coordination action, rewrite it to the current English schema while preserving every value and section.
 
@@ -128,7 +130,7 @@ Every inter-agent message begins with this standalone line:
 Message from {agent name}:
 ```
 
-The Coordinator uses the name `Zeus`, while a Worker uses its assigned name. The initial assignment starts with `Message from Zeus:` and includes the Worker's assigned name.
+The Coordinator uses the name `Zeus`, while a Worker uses its assigned name. The initial assignment starts with `Message from Zeus:` and includes the Worker's assigned name. The Coordinator sends later messages through `send_message_to_thread` with the Worker's `threadId`, its `hostId` when known, and the message in `prompt`. Invoking Zeus is explicit permission to message the Coordinator's own Workers.
 
 ## Worker model and lifecycle
 
@@ -136,14 +138,29 @@ Do not change the Coordinator's model while delegating. When creating and contin
 
 A Worker session handles one bounded assignment in one workstream; Workers do not form a permanent pool. Resume it only while its original assignment remains open, such as for clarification, in-scope corrections, or verification. After the Coordinator accepts its result, stop monitoring it and do not wake it for new work. Every later independent task requires a new session and a new Worker, regardless of shared repository, feature, or expertise. When a pool is set, "Worker pool" replaces this paragraph.
 
+A Worker reports its result, question, or blocker by ending its turn with a final message that begins with `Message from {Name}:`; require this in the assignment instead of asking the Worker to message the Coordinator's thread.
+
+Wait through `wait_threads` with up to eight Workers in `targets`, using their `threadId`, `hostId` when known, and the last returned cursor as `afterCursor`. It returns when a Worker completes or needs attention, the timeout expires, or new user input arrives. After a timeout, continue waiting with the updated cursors if results are still pending. Do not poll `read_thread` in a loop or assume an idle Coordinator resumes automatically.
+
+For a progress snapshot, use `wait_threads` with `timeoutMs: 0`. Read a Worker's report and recent turns through `read_thread`; use `turnLimit: 1` for the latest turn, pagination cursors for older turns, and increase `maxOutputCharsPerItem` if the report is truncated. Present a concise status rather than a transcript. No verified way to stop a Worker's turn exists; when one must stop, ask the user to stop it in the app.
+
 ## Delegation and coordination
 
-1. Give the Worker the `workstream-id`, workstream goal, repository, exact chunk, context, constraints, dependencies, and expected outcome. Explain both the Worker's role and the Coordinator's role.
+1. Give the Worker the `workstream-id`, workstream goal, repository, exact chunk, the paths it may edit and must not touch, context, constraints, dependencies, expected outcome, the checks that prove it done, and the path to `rules.md`. Explain both the Worker's role and the Coordinator's role.
 2. Divide responsibilities so Workers do not overwrite one another's work. Run independent chunks in parallel when useful.
 3. Tell each Worker about material results and ongoing work from other Workers in the same workstream whenever they affect its scope, decisions, dependencies, or integration. Send concise updates rather than full conversations.
 4. After creating a thread, give the user its link or card. Distinguish thread creation, work beginning, and work completion.
-5. Receive and verify results, and send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
+5. Treat a Worker's report as a claim. Before accepting a result that includes code changes, check the commit, the diff against the assignment's paths, that the named checks actually ran, and that callers of any changed shared function were tested. Send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
 6. Present each workstream's final outcome in the Coordinator session together with verification limitations and links to the results.
+
+The Coordinator and Workers act without asking on routine work such as code, tests, pull requests, and merges. They ask the user first only before:
+
+- changing production deployments, settings, or databases;
+- spending money;
+- deleting data;
+- publishing content to other people.
+
+Record a broad approval in the user's exact words under `Decisions` and in `rules.md`; it covers only the goal, target, and effects it names, and does not carry over to other workstreams.
 
 ## Micro tasks and unavailable delegation
 

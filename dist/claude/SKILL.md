@@ -73,7 +73,7 @@ Show the user the URL once the dashboard agent reports it. After each registry u
 
 The Coordinator scopes work, maintains state, delegates, coordinates, verifies results, and presents them to the user. It delegates code analysis, research, review, implementation, and testing to Workers, except for micro tasks.
 
-For every Worker assignment, create a separate Claude Code application session through `start_session` that is visible in the sidebar and can be continued by the user. This is explicit permission to create those sessions, so pass `initiation: "user_asked"`. Use `context: "fresh"`, put the self-contained assignment in `prompt` and the workstream context in `background`, and pass the Worker's title through `title`. With a Worker pool, create each pool Worker this way once and reuse it as described in "Worker pool". Do not replace them with `Agent` subagents unless the user asks separately.
+For every Worker assignment, create a separate Claude Code application session through `start_session` that is visible in the sidebar and can be continued by the user. This is explicit permission to create those sessions, so pass `initiation: "user_asked"`. Use `context: "fresh"`, put the self-contained assignment in `prompt` and the workstream context with the current contents of `rules.md` in `background`, so the Worker does not need permission to read files outside its worktree, and pass the Worker's title through `title`. With a Worker pool, create each pool Worker this way once and reuse it as described in "Worker pool", including the current contents of `rules.md` in each new assignment. Do not replace them with `Agent` subagents unless the user asks separately.
 
 A Worker is an agent running a Worker session. When creating one, the Coordinator assigns it a single random name, such as Jake or Mary. The name remains unchanged for the entire lifetime of the session.
 
@@ -96,7 +96,7 @@ Before the first delegation in every workstream that requires delegation, the Co
 - Goal:
 - Completion criteria:
 - Repositories or directories:
-- Scope and constraints:
+- Scope:
 - Next step:
 
 ## Workers
@@ -108,6 +108,8 @@ Before the first delegation in every workstream that requires delegation, the Co
 ## Decisions
 ## Blockers
 ```
+
+Together with `state.md`, the Coordinator creates `rules.md` next to it, and adds one when resuming a workstream that lacks it. `state.md` records what the workstream must deliver; `rules.md` records how every Worker in it works: the approval policy from "Delegation and coordination", repository conventions, constraints, required checks, Git rules, which Worker owns which paths, and the user's approvals that apply. Each assignment gives its absolute path instead of repeating these rules.
 
 When resuming a registry created by an earlier version whose labels differ from the English schema above, interpret its fields by structure, order, and stored values. Before any other coordination action, rewrite it to the current English schema while preserving every value and section.
 
@@ -150,12 +152,21 @@ When the user asks for progress or a Worker is silent for too long, inspect the 
 
 ## Delegation and coordination
 
-1. Give the Worker the `workstream-id`, workstream goal, repository, exact chunk, context, constraints, dependencies, and expected outcome. Explain both the Worker's role and the Coordinator's role.
+1. Give the Worker the `workstream-id`, workstream goal, repository, exact chunk, the paths it may edit and must not touch, context, constraints, dependencies, expected outcome, the checks that prove it done, and the path to `rules.md`. Explain both the Worker's role and the Coordinator's role.
 2. Divide responsibilities so Workers do not overwrite one another's work; give each Worker that edits files its own worktree through `use_worktree: true`, or for pool Workers as described in "Worker pool". Run independent chunks in parallel when useful.
 3. Tell each Worker about material results and ongoing work from other Workers in the same workstream whenever they affect its scope, decisions, dependencies, or integration. Send concise updates rather than full conversations.
 4. After creating a session, give the user its link as `[title](#local_<id>)`. Distinguish session creation, work beginning, and work completion.
-5. Receive and verify results, and send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
+5. Treat a Worker's report as a claim. Before accepting a result that includes code changes, check the commit, the diff against the assignment's paths, that the named checks actually ran, and that callers of any changed shared function were tested. Send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
 6. Present each workstream's final outcome in the Coordinator session together with verification limitations and links to the results.
+
+The Coordinator and Workers act without asking on routine work such as code, tests, pull requests, and merges. They ask the user first only before:
+
+- changing production deployments, settings, or databases;
+- spending money;
+- deleting data;
+- publishing content to other people.
+
+Record a broad approval in the user's exact words under `Decisions` and in `rules.md`; it covers only the goal, target, and effects it names, and does not carry over to other workstreams.
 
 ## Micro tasks and unavailable delegation
 
