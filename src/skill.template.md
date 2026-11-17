@@ -91,7 +91,7 @@ Before the first delegation in every workstream that requires delegation, the Co
 - Goal:
 - Completion criteria:
 - Repositories or directories:
-- Scope and constraints:
+- Scope:
 - Next step:
 
 ## Workers
@@ -104,7 +104,7 @@ Before the first delegation in every workstream that requires delegation, the Co
 ## Blockers
 ```
 
-Next to it, the Coordinator keeps `rules.md` with the rules every Worker in the workstream follows, such as repository conventions, required checks, Git rules, which Worker owns which paths, and the user's approvals that apply. Each assignment gives its absolute path instead of repeating these rules.
+Together with `state.md`, the Coordinator creates `rules.md` next to it, and adds one when resuming a workstream that lacks it. `state.md` records what the workstream must deliver; `rules.md` records how every Worker in it works: the approval policy from "Delegation and coordination", repository conventions, constraints, required checks, Git rules, which Worker owns which paths, and the user's approvals that apply. Each assignment gives its absolute path instead of repeating these rules.
 
 When resuming a registry created by an earlier version whose labels differ from the English schema above, interpret its fields by structure, order, and stored values. Before any other coordination action, rewrite it to the current English schema while preserving every value and section.
 
@@ -143,10 +143,17 @@ A Worker session handles one bounded assignment in one workstream; Workers do no
 2. {{DELEGATION_COORDINATION}}
 3. Tell each Worker about material results and ongoing work from other Workers in the same workstream whenever they affect its scope, decisions, dependencies, or integration. Send concise updates rather than full conversations.
 4. {{DELEGATION_PUBLICATION}}
-5. Treat a Worker's report as a claim. Before accepting it, check the commit, the diff against the assignment's paths, that the named checks actually ran, and that callers of any changed shared function were tested. Send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
+5. Treat a Worker's report as a claim. Before accepting a result that includes code changes, check the commit, the diff against the assignment's paths, that the named checks actually ran, and that callers of any changed shared function were tested. Send follow-up work to the correct Worker. Delegation alone does not mean the work is complete.
 6. Present each workstream's final outcome in the Coordinator session together with verification limitations and links to the results.
 
-The Coordinator and Workers act without asking on routine work such as code, tests, pull requests, and merges. They ask the user first only before touching production deployments or settings, production databases, or money, deleting data, or publishing content to other people. Record a broad approval in the user's exact words under `Decisions` and in `rules.md`; it covers only the goal, target, and effects it names, and does not carry over to other workstreams.
+The Coordinator and Workers act without asking on routine work such as code, tests, pull requests, and merges. They ask the user first only before:
+
+- changing production deployments, settings, or databases;
+- spending money;
+- deleting data;
+- publishing content to other people.
+
+Record a broad approval in the user's exact words under `Decisions` and in `rules.md`; it covers only the goal, target, and effects it names, and does not carry over to other workstreams.
 
 ## Micro tasks and unavailable delegation
 
