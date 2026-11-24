@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "bun": "1.4.x"
+    "bun": ">=1.4.5"
   },
   "scripts": {
     "build": "bun run src/build.ts",
@@ -19,7 +19,7 @@
     "zeus:uninstall": "${ZEUS_BIN_DIR:-$HOME/.local/bin}/zeus uninstall"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.2",
+    "@types/bun": "^1.4.5",
     "typescript": "^7.0.2"
   },
   "dependencies": {
